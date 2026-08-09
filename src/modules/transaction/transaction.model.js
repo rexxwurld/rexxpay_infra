@@ -14,9 +14,12 @@ const transactionSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ['pending', 'success', 'partial', 'over', 'failed'],
+      // 'flagged' = money landed and is logged, but held from crediting the
+      // merchant wallet pending manual review (limit exceeded / sanctions hit).
+      enum: ['pending', 'success', 'partial', 'over', 'failed', 'flagged'],
       default: 'pending',
     },
+    flagReason: { type: String, default: null },
 
     channel: { type: String, default: 'dedicated_virtual_account' },
     bankReference: { type: String }, // the bank partner's own transaction ID, for reconciliation
