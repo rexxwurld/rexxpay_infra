@@ -50,6 +50,40 @@ Merchant  --(secret key)-->  RexxPay API  --(pool assignment)-->  Bank Partner (
 - **Wallet updates are atomic (`$inc`)**, not read-then-write, to avoid race
   conditions when multiple webhooks land close together.
 
+## What's been added beyond the original mock
+
+This started as an architecturally-correct mock of a Paystack-style
+processor. The pieces below move it closer to how a real payment company
+is actually built — but read the "Still not real" section too, since some
+of this is a real control and some is a stub showing where a real control
+must go.
+
+| Module | What it does |
+|---|---|
+| `ledger` | Double-entry bookkeeping (`LedgerEntry`). Every wallet credit/debit also posts a balanced debit+credit pair. `wallet.balance` is now a cache; the ledger is the source of truth and can rebuild any balance from history. |
+| `audit` | Append-only `AuditLog` — every webhook signature failure, flagged transaction, payout, and login writes a record. |
+| `webhook` (reworked) | The HTTP handler now only verifies the signature, persists the raw event (`WebhookEvent`), and acks. Actual processing happens async in `webhook.processor.js`, with retry/backoff and a `redriveStuckEvents()` call on startup for anything left mid-flight after a crash. This is the seam to swap in a real queue (SQS/BullMQ). |
+| `payout` | The outbound half of the system — merchants can request a payout to a real bank account. Debits the wallet, posts ledger entries, and calls a stubbed `sendToRealBank()` — swap that one function for a real disbursement provider and the rest (atomicity, limits, reversal-on-failure) is real. |
+| `config/limits.js` + risk checks in `transaction.service.js` | Per-transaction, daily, and velocity limits. Transactions that exceed them land as `status: 'flagged'` instead of auto-crediting, for manual review. |
+| `utils/sanctionsCheck.js` | **Stub only** — shows where real AML/sanctions screening (OFAC/UN/NFIU lists via a licensed provider) must run, with a dev-only denylist for testing the flagging path. |
+| `scripts/reconcile.js` | Compares our transaction records against a bank settlement export (JSON) and reports mismatches in both directions — money we think we have that the bank doesn't confirm, and money the bank settled that we never recorded. |
+| Idempotency | `Transaction.reference` and `Payout.reference` both have unique DB indexes, so even a race between two concurrent webhook deliveries fails safely at the database level, not just in application logic. |
+
+## Still not real (and why it's hard)
+
+- **`sendToRealBank()` in `payout.service.js`** always "succeeds." Wiring a
+  real disbursement provider means handling their actual async
+  success/pending/failure states, not just a boolean.
+- **`sanctionsCheck.js`** is exact-string-match against an env var — real
+  screening needs fuzzy name matching against maintained watchlists via a
+  licensed provider.
+- **The webhook queue is in-process** (`setImmediate` + `setTimeout`
+  backoff), not a durable broker — it won't survive the process being
+  killed mid-retry the way SQS/BullMQ would.
+- **No license.** None of the above makes this legally allowed to hold or
+  move other people's money — that still requires a CBN license or a
+  partnership with an already-licensed bank/PSB/MFB.
+
 ## Getting Started
 
 1. `npm install`

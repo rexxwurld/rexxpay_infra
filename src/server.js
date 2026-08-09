@@ -3,6 +3,7 @@ const app = require('./app');
 const connectDB = require('./config/db');
 const { port } = require('./config/env');
 const { ensureDefaultBankPartners, provisionAccountPool } = require('./modules/bankPartner/bankPartner.service');
+const { redriveStuckEvents } = require('./modules/webhook/webhook.processor');
 
 async function start() {
   await connectDB();
@@ -20,6 +21,13 @@ async function start() {
   // would spam real accounts you don't need. Provision it once manually,
   // e.g. via a one-off script or an authenticated admin route, and only
   // top it up again when the pool actually runs low.
+
+  // If the process crashed/restarted mid-webhook-processing, pick those
+  // events back up instead of leaving them stuck in 'queued'/'processing'
+  // forever. A real queue (SQS/BullMQ) gives you this for free via
+  // visibility timeouts; this is the equivalent for the in-process stand-in.
+  const redriven = await redriveStuckEvents();
+  if (redriven > 0) console.log(`[server] redriving ${redriven} stuck webhook event(s)`);
 
   app.listen(port, () => {
     console.log(`[server] RexxPay listening on port ${port}`);
