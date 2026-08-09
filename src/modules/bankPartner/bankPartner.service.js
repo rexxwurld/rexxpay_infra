@@ -1,11 +1,18 @@
 // src/modules/bankPartner/bankPartner.service.js
+const axios = require('axios');
 const BankPartner = require('./bankPartner.model');
 const VirtualAccount = require('../virtualAccount/virtualAccount.model');
 const generateAccountNumber = require('../../utils/generateAccountNumber');
+const { rexxPayBankBaseUrl, rexxPayBankAdminKey } = require('../../config/env');
 
-// Seeds the two default partner banks if they don't already exist.
+// Seeds the default partner banks if they don't already exist.
+// 'rexxpay-bank' is the REAL bank (rexxpay.onrender.com) - accounts under
+// it are real wallets that can actually receive transfers and fire
+// webhooks. 'wema-bank' / 'titan-trust-bank' stay as local mock/demo
+// partners for offline testing without hitting the real bank.
 async function ensureDefaultBankPartners() {
   const defaults = [
+    { name: 'RexxPay Bank', slug: 'rexxpay-bank' },
     { name: 'Wema Bank', slug: 'wema-bank' },
     { name: 'Titan Trust Bank', slug: 'titan-trust-bank' },
   ];
@@ -14,12 +21,18 @@ async function ensureDefaultBankPartners() {
   }
 }
 
-// Simulates the bank partner provisioning N unassigned account numbers into
-// the pool. In real life this happens on the bank's side; you'd just call
-// their API to "request" one. Here we pre-generate a batch to draw from.
+// Provisions N unassigned account numbers into the pool for a given bank
+// partner. For 'rexxpay-bank', this calls the REAL RexxPay Bank API to
+// create real wallets with real account numbers. For any other (mock)
+// bank partner, it keeps the old locally-generated fake numbers - useful
+// for testing this service without touching the real bank at all.
 async function provisionAccountPool(bankSlug, count = 20) {
   const bank = await BankPartner.findOne({ slug: bankSlug });
   if (!bank) throw new Error(`Unknown bank partner: ${bankSlug}`);
+
+  if (bankSlug === 'rexxpay-bank') {
+    return provisionRealAccountsFromBank(bank, count);
+  }
 
   const accounts = [];
   for (let i = 0; i < count; i++) {
@@ -31,6 +44,51 @@ async function provisionAccountPool(bankSlug, count = 20) {
   }
   // Ignore duplicate account numbers if any collide (rare with 10 digits)
   await VirtualAccount.insertMany(accounts, { ordered: false }).catch(() => {});
+  return bank;
+}
+
+async function provisionRealAccountsFromBank(bank, count) {
+  if (!rexxPayBankAdminKey) {
+    throw new Error(
+      'REXXPAY_BANK_ADMIN_KEY is not set - cannot provision real accounts from RexxPay Bank.'
+    );
+  }
+
+  const created = [];
+
+  for (let i = 0; i < count; i++) {
+    try {
+      const response = await axios.post(
+        `${rexxPayBankBaseUrl}/api/v1/admin/pool-accounts`,
+        { label: `RexxPay Infra pool account #${i + 1}` },
+        {
+          headers: {
+            'x-admin-key': rexxPayBankAdminKey,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        }
+      );
+
+      const { accountNumber } = response.data.data;
+
+      created.push({
+        accountNumber,
+        bank: bank._id,
+        status: 'available',
+      });
+    } catch (err) {
+      // Stop on first failure rather than silently provisioning a partial,
+      // possibly-broken pool - surface the real error to whoever called this.
+      const message = err.response?.data?.message || err.message;
+      throw new Error(`Failed to provision real account from RexxPay Bank: ${message}`);
+    }
+  }
+
+  if (created.length) {
+    await VirtualAccount.insertMany(created, { ordered: false }).catch(() => {});
+  }
+
   return bank;
 }
 
