@@ -1,0 +1,77 @@
+erDiagram
+    MERCHANT ||--o{ CUSTOMER : "onboards"
+    MERCHANT ||--o{ VIRTUAL_ACCOUNT : "owns (via assignment)"
+    MERCHANT ||--o{ WALLET : "has settlement wallet"
+    CUSTOMER ||--o| VIRTUAL_ACCOUNT : "assigned to"
+    CUSTOMER ||--o{ TRANSACTION : "makes"
+    VIRTUAL_ACCOUNT ||--o{ TRANSACTION : "receives"
+    BANK_PARTNER ||--o{ VIRTUAL_ACCOUNT : "provisions (pool)"
+    WALLET ||--o{ TRANSACTION : "credited by"
+    TRANSACTION ||--o| WEBHOOK_EVENT : "logged from"
+
+    MERCHANT {
+        string merchant_id PK
+        string business_name
+        string email
+        string webhook_url
+        string api_key_hash
+        datetime created_at
+    }
+
+    CUSTOMER {
+        string customer_id PK
+        string merchant_id FK
+        string full_name
+        string email
+        string phone
+        datetime created_at
+    }
+
+    BANK_PARTNER {
+        string bank_id PK
+        string bank_name
+        string bank_slug
+        string api_base_url
+    }
+
+    VIRTUAL_ACCOUNT {
+        string account_number PK
+        string bank_id FK
+        string merchant_id FK "nullable until assigned"
+        string customer_id FK "nullable until assigned"
+        string status "available | assigned | deactivated"
+        datetime assigned_at
+        datetime created_at
+    }
+
+    WALLET {
+        string wallet_id PK
+        string merchant_id FK
+        integer balance "minor units"
+        string currency
+        datetime updated_at
+    }
+
+    TRANSACTION {
+        string transaction_id PK
+        string account_number FK
+        string customer_id FK
+        string merchant_id FK
+        string wallet_id FK
+        integer amount_expected "minor units"
+        integer amount_received "minor units"
+        string currency
+        string status "pending | succeeded | partially_paid | overpaid | failed"
+        string idempotency_key
+        datetime created_at
+        datetime confirmed_at
+    }
+
+    WEBHOOK_EVENT {
+        string event_id PK
+        string transaction_id FK
+        string bank_id FK
+        string payload_signature
+        string verification_status "verified | invalid | duplicate"
+        datetime received_at
+    }
