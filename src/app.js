@@ -11,6 +11,7 @@ const walletRoutes = require('./modules/wallet/wallet.routes');
 const transactionRoutes = require('./modules/transaction/transaction.routes');
 const webhookRoutes = require('./modules/webhook/webhook.routes');
 const payoutRoutes = require('./modules/payout/payout.routes');
+const adminRoutes = require('./modules/admin/admin.routes');
 const mockBankRoutes = require('./modules/bankPartner/mockBank.routes');
 
 const { notFound, errorHandler } = require('./middleware/error.middleware');
@@ -31,6 +32,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/payouts', payoutRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Local-only simulator for testing the full flow without a real bank.
 // Mount this behind an env check in production (or delete the file).
