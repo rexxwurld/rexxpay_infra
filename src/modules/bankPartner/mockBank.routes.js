@@ -13,6 +13,8 @@ const router = express.Router();
 const axios = require('axios'); // add "axios" to package.json if you wire this up
 const { nanoid } = require('nanoid');
 const { signPayload } = require('../../utils/webhookSignature');
+const WebhookEvent = require('../webhook/webhookEvent.model');
+const Transaction = require('../transaction/transaction.model');
 
 router.post('/simulate-transfer', async (req, res) => {
   const { accountNumber, amount, currency = 'NGN' } = req.body;
@@ -36,6 +38,37 @@ router.post('/simulate-transfer', async (req, res) => {
   });
 
   res.json({ status: true, message: 'simulated transfer sent to webhook', webhookResponse: response.data });
+});
+
+// Dev-only: lets simulate-transfer.html poll for what actually happened to
+// the webhook it just fired, instead of the POST above's 202 ("queued for
+// processing") being mistaken for "the payment succeeded". Not meant for
+// merchant/production use - no auth on purpose, same as the rest of this
+// mock-bank router.
+router.get('/simulate-transfer/:eventId/status', async (req, res) => {
+  const event = await WebhookEvent.findById(req.params.eventId).catch(() => null);
+  if (!event) {
+    return res.status(404).json({ status: false, message: 'event_not_found' });
+  }
+
+  const result = {
+    eventStatus: event.status, // queued | processing | processed | failed
+    lastError: event.lastError || null,
+    attempts: event.attempts,
+  };
+
+  if (event.status === 'processed') {
+    const bankReference = event.rawBody?.bankReference;
+    const transaction = bankReference
+      ? await Transaction.findOne({ reference: bankReference })
+      : null;
+
+    result.transactionStatus = transaction?.status || null; // success | partial | over | flagged | failed
+    result.flagReason = transaction?.flagReason || null;
+    result.amountReceived = transaction?.amountReceived ?? null;
+  }
+
+  res.json({ status: true, data: result });
 });
 
 module.exports = router;
