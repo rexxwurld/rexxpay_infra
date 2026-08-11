@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RexxPay — Dashboard</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="dashboard-page">
+
+<nav class="dash-nav">
+  <a href="/" class="brand"><span class="dot"></span>RexxPay</a>
+  <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
+</nav>
+
+<div class="dash-shell">
+
+  <div class="dash-head">
+    <div>
+      <h1 id="bizName">—<span class="mode-badge" id="modeBadge">test mode</span></h1>
+      <div class="biz" id="bizEmail"></div>
+    </div>
+    <div class="ledger-tag"><span class="dot"></span>Balance reconciled from ledger</div>
+  </div>
+
+  <div class="stat-row">
+    <div class="stat">
+      <div class="lbl">Wallet balance</div>
+      <div class="val green" id="walletBalance">—</div>
+      <div class="sub-note">Available to pay out</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Volume received</div>
+      <div class="val" id="volumeIn">—</div>
+      <div class="sub-note" id="txCountNote">— transactions</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Pending review</div>
+      <div class="val amber" id="flaggedCount">—</div>
+      <div class="sub-note">Flagged transactions</div>
+    </div>
+    <div class="stat">
+      <div class="lbl">Paid out</div>
+      <div class="val blue" id="payoutVolume">—</div>
+      <div class="sub-note" id="payoutCountNote">— payouts</div>
+    </div>
+  </div>
+
+  <div class="section-tabs">
+    <button class="section-tab active" data-tab="overview">Overview</button>
+    <button class="section-tab" data-tab="transactions">Transactions</button>
+    <button class="section-tab" data-tab="payouts">Payouts</button>
+    <button class="section-tab" data-tab="settings">Settings</button>
+  </div>
+
+  <!-- ============ OVERVIEW ============ -->
+  <div class="tab-panel active" id="tab-overview">
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Create a payment link</h2>
+        <span class="hint">Assigns a dedicated virtual account and returns a checkout link</span>
+      </div>
+      <div class="panel-body">
+        <form id="linkForm" class="inline-form">
+          <div class="field">
+            <label>Amount (₦)</label>
+            <input type="number" id="linkAmount" placeholder="5000" min="1" step="0.01" required />
+          </div>
+          <div class="field">
+            <label>Customer email</label>
+            <input type="email" id="linkEmail" placeholder="customer@email.com" required />
+          </div>
+          <div class="field">
+            <label>Customer name (optional)</label>
+            <input type="text" id="linkName" placeholder="Jane Doe" />
+          </div>
+          <button type="submit" class="btn btn-primary">Generate link</button>
+        </form>
+        <div id="linkResult"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Recent transactions</h2>
+        <button class="btn btn-ghost btn-sm" data-goto="transactions">View all</button>
+      </div>
+      <div class="panel-body" style="padding:0;">
+        <table id="recentTxTable">
+          <thead><tr><th>Reference</th><th>Status</th><th>Received</th><th>Date</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="recentTxEmpty" style="display:none;">No transactions yet — generate a payment link above to get started.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ TRANSACTIONS ============ -->
+  <div class="tab-panel" id="tab-transactions">
+    <div class="panel">
+      <div class="panel-head"><h2>All transactions</h2></div>
+      <div class="chip-row" id="txFilters">
+        <span class="chip active" data-status="">All</span>
+        <span class="chip" data-status="success">Success</span>
+        <span class="chip" data-status="pending">Pending</span>
+        <span class="chip" data-status="partial">Partial</span>
+        <span class="chip" data-status="over">Overpaid</span>
+        <span class="chip" data-status="flagged">Flagged</span>
+        <span class="chip" data-status="failed">Failed</span>
+      </div>
+      <div class="search-row">
+        <input type="text" id="txSearch" placeholder="Search by reference or bank reference…" />
+      </div>
+      <div class="panel-body" style="padding:16px 0 0;">
+        <table id="txTable">
+          <thead><tr><th>Reference</th><th>Status</th><th>Expected</th><th>Received</th><th>Date</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="txEmpty" style="display:none;">No matching transactions.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PAYOUTS ============ -->
+  <div class="tab-panel" id="tab-payouts">
+
+    <div class="panel">
+      <div class="panel-head"><h2>Request a payout</h2></div>
+      <div class="panel-body">
+        <form id="payoutForm" class="inline-form">
+          <div class="field">
+            <label>Amount (₦)</label>
+            <input type="number" id="poAmount" placeholder="10000" min="1" step="0.01" required />
+          </div>
+          <div class="field">
+            <label>Bank code</label>
+            <input type="text" id="poBankCode" placeholder="058" required />
+          </div>
+          <div class="field">
+            <label>Account number</label>
+            <input type="text" id="poAccountNumber" placeholder="0123456789" required />
+          </div>
+          <div class="field">
+            <label>Account name</label>
+            <input type="text" id="poAccountName" placeholder="As registered with the bank" required />
+          </div>
+          <button type="submit" class="btn btn-primary">Send payout</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Payout history</h2></div>
+      <div class="panel-body" style="padding:0;">
+        <table id="poTable">
+          <thead><tr><th>Reference</th><th>Status</th><th>Amount</th><th>Destination</th><th>Date</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="poEmpty" style="display:none;">No payouts yet.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============ SETTINGS ============ -->
+  <div class="tab-panel" id="tab-settings">
+
+    <div class="panel">
+      <div class="panel-head"><h2>Business</h2></div>
+      <div class="panel-body">
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="k-label">Business name</div>
+            <div class="k-val2" id="setBizName">—</div>
+          </div>
+          <div class="info-item">
+            <div class="k-label">Email</div>
+            <div class="k-val2" id="setBizEmail">—</div>
+          </div>
+          <div class="info-item">
+            <div class="k-label">Public key</div>
+            <div class="k-val2" id="setPubKey">—</div>
+          </div>
+          <div class="info-item">
+            <div class="k-label">Mode</div>
+            <div class="k-val2" id="setMode">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Secret key</h2>
+        <span class="hint">Used to authenticate API requests — shown once, never retrievable after</span>
+      </div>
+      <div class="panel-body">
+        <p style="color:var(--paper-dim); font-size:13.5px; margin-top:0;">
+          For security, RexxPay never stores your secret key in a readable form —
+          only its hash. If you've lost it, generate a new one below. Your
+          current key stops working the instant you do.
+        </p>
+        <button class="btn" id="regenKeyBtn">Regenerate secret key</button>
+        <div id="regenKeyResult"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Webhook URL</h2>
+        <span class="hint">RexxPay POSTs a signed transaction.success event here on every confirmed transfer</span>
+      </div>
+      <div class="panel-body">
+        <form id="webhookForm" class="inline-form">
+          <div class="field">
+            <label>https://your-store.com/rexxpay/webhook</label>
+            <input type="url" id="webhookUrlInput" placeholder="https://your-store.com/rexxpay/webhook" />
+          </div>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/dashboard.js"></script>
+</body>
+</html>

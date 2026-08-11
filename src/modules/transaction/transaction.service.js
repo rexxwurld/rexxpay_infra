@@ -2,9 +2,13 @@
 const mongoose = require('mongoose');
 const Transaction = require('./transaction.model');
 const Customer = require('../customer/customer.model');
+const VirtualAccount = require('../virtualAccount/virtualAccount.model');
 const { creditWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
+const { releaseVirtualAccount } = require('../virtualAccount/virtualAccount.service');
 const { screenName } = require('../../utils/sanctionsCheck');
+const { computeFee } = require('../../utils/feeCalculator');
+const Merchant = require('../merchant/merchant.model');
 const auditLog = require('../audit/auditLog.service');
 const limits = require('../../config/limits');
 
@@ -76,6 +80,24 @@ async function recordIncomingPayment({
     status = 'success';
   }
 
+  // --- Determine split (if the virtual account this payment landed on
+  // has one configured) ------------------------------------------------
+  const virtualAccount = await VirtualAccount.findById(virtualAccountId);
+  const hasSplit = !!(virtualAccount?.splitSubaccount && virtualAccount?.splitPercentage);
+  const splitAmount = hasSplit ? Math.floor((amountReceived * virtualAccount.splitPercentage) / 100) : 0;
+  const merchantAmount = amountReceived - splitAmount;
+
+  // --- Platform fee. Charged against the merchant's own share only -
+  // never against a subaccount's split, since that money was never the
+  // platform's counterparty to begin with. Skipped entirely for
+  // flagged/failed transactions, computed below alongside them.
+  let platformFee = 0;
+  let netAmount = merchantAmount;
+  if (status !== 'flagged' && status !== 'failed' && merchantAmount > 0) {
+    const merchant = await Merchant.findById(merchantId);
+    ({ feeAmount: platformFee, netAmount } = computeFee(merchantAmount, merchant));
+  }
+
   // --- Persist transaction, wallet credit, and ledger entries atomically
   const session = await mongoose.startSession();
   try {
@@ -94,29 +116,98 @@ async function recordIncomingPayment({
           status,
           flagReason,
           bankReference,
+          splitSubaccount: hasSplit ? virtualAccount.splitSubaccount : null,
+          splitAmount,
+          platformFee,
+          netAmount,
         },
       ],
       { session, ordered: true }
     );
 
     if (status !== 'flagged' && status !== 'failed') {
-      // Credit the merchant's wallet with exactly what was received - never
-      // with the expected amount, and never before the bank confirmed it.
-      await creditWallet(merchantId, amountReceived, session);
+      if (hasSplit) {
+        // Merchant is credited its share only - never the full amount
+        // received. Distinct sourceRef suffixes keep both entries
+        // covered by the ledger's own (sourceType, sourceRef,
+        // accountRef, direction) uniqueness guard.
+        if (netAmount > 0) {
+          await creditWallet(merchantId, netAmount, session, currency);
+          await postDoubleEntry({
+            entryGroup: `txn_${transaction._id}`,
+            amount: netAmount,
+            currency,
+            sourceType: 'incoming_payment',
+            sourceRef: `${transaction._id.toString()}:merchant`,
+            debit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Inbound customer payment received' },
+            credit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Wallet credited for inbound payment (net of split and platform fee)' },
+            session,
+          });
+        }
 
-      // Ledger: money leaves the platform's clearing account and becomes
-      // owed to the merchant. Source-tied idempotency keys mean replaying
-      // this function for the same transaction._id can never double-post.
-      await postDoubleEntry({
-        entryGroup: `txn_${transaction._id}`,
-        amount: amountReceived,
-        currency,
-        sourceType: 'incoming_payment',
-        sourceRef: transaction._id.toString(),
-        debit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Inbound customer payment received' },
-        credit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Wallet credited for inbound payment' },
-        session,
-      });
+        if (platformFee > 0) {
+          await postDoubleEntry({
+            entryGroup: `txn_${transaction._id}`,
+            amount: platformFee,
+            currency,
+            sourceType: 'incoming_payment',
+            sourceRef: `${transaction._id.toString()}:fee`,
+            debit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Platform fee taken from inbound payment' },
+            credit: { accountType: 'platform_revenue', accountRef: 'platform_revenue', description: 'Platform fee revenue' },
+            session,
+          });
+        }
+
+        if (splitAmount > 0) {
+          // Split share accrues to the subaccount's ledger balance -
+          // settled out to its bank account separately via
+          // subaccountService.settleSubaccount, not credited instantly.
+          await postDoubleEntry({
+            entryGroup: `txn_${transaction._id}`,
+            amount: splitAmount,
+            currency,
+            sourceType: 'incoming_payment',
+            sourceRef: `${transaction._id.toString()}:split`,
+            debit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Inbound customer payment received (split portion)' },
+            credit: { accountType: 'subaccount_settlement', accountRef: virtualAccount.splitSubaccount.toString(), description: 'Subaccount split credited' },
+            session,
+          });
+        }
+      } else {
+        // Credit the merchant's wallet with what was received, net of the
+        // platform fee - never with the expected amount, and never before
+        // the bank confirmed it.
+        if (netAmount > 0) {
+          await creditWallet(merchantId, netAmount, session, currency);
+
+          // Ledger: money leaves the platform's clearing account and becomes
+          // owed to the merchant. Source-tied idempotency keys mean replaying
+          // this function for the same transaction._id can never double-post.
+          await postDoubleEntry({
+            entryGroup: `txn_${transaction._id}`,
+            amount: netAmount,
+            currency,
+            sourceType: 'incoming_payment',
+            sourceRef: transaction._id.toString(),
+            debit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Inbound customer payment received' },
+            credit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Wallet credited for inbound payment (net of platform fee)' },
+            session,
+          });
+        }
+
+        if (platformFee > 0) {
+          await postDoubleEntry({
+            entryGroup: `txn_${transaction._id}`,
+            amount: platformFee,
+            currency,
+            sourceType: 'incoming_payment',
+            sourceRef: `${transaction._id.toString()}:fee`,
+            debit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Platform fee taken from inbound payment' },
+            credit: { accountType: 'platform_revenue', accountRef: 'platform_revenue', description: 'Platform fee revenue' },
+            session,
+          });
+        }
+      }
     }
 
     await session.commitTransaction();
@@ -131,6 +222,16 @@ async function recordIncomingPayment({
       severity: status === 'flagged' ? 'critical' : 'info',
       metadata: { status, flagReason, amountReceived, merchantId: merchantId.toString() },
     });
+
+    // This account's job for this order/request is done - hand it back to
+    // the pool so a future order/deposit gets a different account number.
+    // 'partial' is deliberately excluded: the account may still be
+    // waiting on the remainder of the same payment.
+    if (status === 'success' || status === 'over') {
+      await releaseVirtualAccount(virtualAccountId).catch((err) => {
+        console.error('[transaction] failed to release virtual account after payment:', err.message);
+      });
+    }
 
     return { transaction, duplicate: false };
   } catch (err) {

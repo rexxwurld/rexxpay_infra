@@ -20,4 +20,14 @@ module.exports = {
 
   // Payouts
   MAX_SINGLE_PAYOUT_MINOR: Number(process.env.MAX_SINGLE_PAYOUT_MINOR || 2_000_000_00), // ₦2,000,000
+
+  // A virtual account that's been sitting 'assigned' with no successful
+  // payment for longer than this is considered abandoned (customer never
+  // paid, or paid a different way) and gets released back to the
+  // available pool so a future order can reuse the account number.
+  VIRTUAL_ACCOUNT_EXPIRY_MINUTES: Number(process.env.VIRTUAL_ACCOUNT_EXPIRY_MINUTES || 60),
+
+  // How long a merchant has to submit evidence on a dispute before it's
+  // eligible for resolution against them by default.
+  DISPUTE_EVIDENCE_WINDOW_DAYS: Number(process.env.DISPUTE_EVIDENCE_WINDOW_DAYS || 7),
 };

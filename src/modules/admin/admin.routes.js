@@ -10,6 +10,7 @@ const requireAdminKey = require('../../middleware/adminKey.middleware');
 const { ensureDefaultBankPartners, provisionAccountPool } = require('../bankPartner/bankPartner.service');
 const VirtualAccount = require('../virtualAccount/virtualAccount.model');
 const BankPartner = require('../bankPartner/bankPartner.model');
+const Merchant = require('../merchant/merchant.model');
 
 // GET so it's genuinely "visit a URL" - no curl/Postman needed. A GET that
 // changes state is unconventional REST, but this is an internal operator
@@ -57,6 +58,36 @@ router.get('/pool-status', requireAdminKey, async (req, res) => {
     res.json({ status: true, data: byBank });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });
+  }
+});
+
+// Set (or clear) a per-merchant platform fee override. Any field left out
+// of the body clears back to the global default (src/config/fees.js).
+// Never merchant-settable - deliberately admin-key-only.
+//
+//   PATCH /api/admin/merchants/:id/fees
+//   { "percentageBps": 100, "fixedMinor": 5000, "capMinor": 150000 }
+router.patch('/merchants/:id/fees', requireAdminKey, async (req, res) => {
+  try {
+    const { percentageBps, fixedMinor, capMinor } = req.body;
+    const fees = {};
+    if (percentageBps != null) fees.percentageBps = Number(percentageBps);
+    if (fixedMinor != null) fees.fixedMinor = Number(fixedMinor);
+    if (capMinor != null) fees.capMinor = Number(capMinor);
+
+    const merchant = await Merchant.findByIdAndUpdate(
+      req.params.id,
+      { $set: { fees } },
+      { new: true }
+    ).select('businessName fees');
+
+    if (!merchant) {
+      return res.status(404).json({ status: false, message: 'merchant_not_found' });
+    }
+
+    res.json({ status: true, data: merchant });
+  } catch (err) {
+    res.status(400).json({ status: false, message: err.message });
   }
 });
 

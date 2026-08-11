@@ -23,6 +23,21 @@ const transactionSchema = new mongoose.Schema(
 
     channel: { type: String, default: 'dedicated_virtual_account' },
     bankReference: { type: String }, // the bank partner's own transaction ID, for reconciliation
+
+    // Set only if the virtual account this payment landed on had a split
+    // configured. splitAmount already left amountReceived on its way to
+    // the subaccount - the merchant's wallet was credited amountReceived
+    // minus splitAmount, not the full amountReceived.
+    splitSubaccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Subaccount', default: null },
+    splitAmount: { type: Number, default: 0 },
+
+    // Platform revenue taken on this transaction, deducted from the
+    // merchant's share before their wallet is credited. Not deducted
+    // from the subaccount split - the split partner is paid in full.
+    platformFee: { type: Number, default: 0 },
+    // What actually landed in the merchant's wallet after the split
+    // portion (if any) and the platform fee are both removed.
+    netAmount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

@@ -7,10 +7,38 @@ const merchantSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     passwordHash: { type: String, required: true },
     webhookUrl: { type: String },
-    publicKey: { type: String, required: true, unique: true },
-    secretKeyHash: { type: String, required: true }, // never store the raw secret key
-    mode: { type: String, enum: ['test', 'live'], default: 'test' },
-    isVerified: { type: Boolean, default: false }, // KYC / go-live status
+    webhookSecret: { type: String },
+
+    // Test and live keypairs both exist simultaneously (Paystack-style).
+    // Which one is "active" for a request is determined by the key
+    // prefix the caller sends, not by a merchant-level toggle - so
+    // switching modes never invalidates the other pair.
+    testPublicKey: { type: String, required: true, unique: true },
+    testSecretKeyHash: { type: String, required: true },
+    livePublicKey: { type: String, required: true, unique: true },
+    liveSecretKeyHash: { type: String, required: true },
+
+    isVerified: { type: Boolean, default: false },
+
+    // Per-merchant platform fee override. Any field left unset falls
+    // back to the global default in src/config/fees.js. Set via the
+    // admin-key-protected /api/admin/merchants/:id/fees endpoint - never
+    // client-settable, since a merchant setting its own fee to zero
+    // would defeat the whole point.
+    fees: {
+      percentageBps: { type: Number, min: 0, max: 10000 },
+      fixedMinor: { type: Number, min: 0 },
+      capMinor: { type: Number, min: 0 },
+    },
+
+    defaultCurrency: { type: String, default: 'NGN' },
+
+    twoFactor: {
+      enabled: { type: Boolean, default: false },
+      secret: { type: String }, // set once enabled=true
+      pendingSecret: { type: String }, // set during setup, before confirmation
+      backupCodeHashes: { type: [String], default: [] },
+    },
   },
   { timestamps: true }
 );

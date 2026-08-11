@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RexxPay — Dedicated virtual accounts for Nigerian merchants</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="brand"><span class="dot"></span>RexxPay</a>
+  <div class="nav-links">
+    <a href="/onboarding.html?tab=login" class="btn btn-ghost btn-sm">Log in</a>
+    <a href="/onboarding.html?tab=register" class="btn btn-primary btn-sm">Get API keys</a>
+  </div>
+</nav>
+
+<section class="hero wrap">
+  <div class="eyebrow">Payment infrastructure</div>
+  <h1>Give every customer their own account number. <span class="accent">Get paid the moment they transfer.</span></h1>
+  <p class="lede">RexxPay assigns a dedicated virtual account per customer, verifies bank transfers with signed webhooks, and credits your wallet — no polling, no manual reconciliation.</p>
+  <div class="hero-cta">
+    <a href="/onboarding.html?tab=register" class="btn btn-primary">Create a merchant account</a>
+    <a href="#integrate" class="btn">View the integration</a>
+  </div>
+
+  <div class="rail-diagram">
+    <div class="rail-track">
+      <div class="rail-node"><div class="label">01</div><div class="name">Customer</div></div>
+      <div class="rail-connector"><span class="pulse"></span></div>
+      <div class="rail-node"><div class="label">02</div><div class="name">Virtual acct</div></div>
+      <div class="rail-connector"><span class="pulse" style="animation-delay:.6s"></span></div>
+      <div class="rail-node active"><div class="label">03</div><div class="name">Bank webhook</div></div>
+      <div class="rail-connector"><span class="pulse" style="animation-delay:1.2s"></span></div>
+      <div class="rail-node"><div class="label">04</div><div class="name">Your wallet</div></div>
+      <div class="rail-connector"><span class="pulse" style="animation-delay:1.8s"></span></div>
+      <div class="rail-node"><div class="label">05</div><div class="name">Your webhook</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+  <div class="grid3">
+    <div class="card">
+      <div class="num">Accounts</div>
+      <h3>Pooled, not minted on demand</h3>
+      <p>Virtual accounts are pre-provisioned and assigned to a customer, matching how real dedicated virtual account rails work.</p>
+    </div>
+    <div class="card">
+      <div class="num">Trust</div>
+      <h3>Only a signed webhook credits you</h3>
+      <p>No endpoint lets a client or merchant mark a payment successful directly — that's the one path an attacker can't fake.</p>
+    </div>
+    <div class="card">
+      <div class="num">Ledger</div>
+      <h3>Double-entry, idempotent</h3>
+      <p>Every credit posts a balanced ledger pair. Retried webhooks and race conditions can't double-credit a wallet.</p>
+    </div>
+  </div>
+
+  <section id="integrate" style="margin-bottom:64px;">
+    <div class="section-label">Integration, top to bottom</div>
+    <div class="code-block">POST /api/customers            → register the buyer
+POST /api/virtual-accounts      → assign an account for this order
+                                   (bank webhook lands, wallet is credited)
+POST your /webhook              ← RexxPay pushes "transaction.success"
+                                   signed with your webhookSecret</div>
+  </section>
+</div>
+
+<footer>Built by Rexxwurld · RexxPay is test-mode infrastructure, not a licensed money transmitter.</footer>
+
+</body>
+</html>

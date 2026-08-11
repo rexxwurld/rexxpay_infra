@@ -14,7 +14,7 @@ wallet credits when customers pay via bank transfer.
 ## Architecture
 
 ```
-Merchant  --(secret key)-->  RexxPay API  --(pool assignment)-->  Bank Partner (mocked)
+Merchant  --(secret key)-->  RexxPay API  --(pool assignment)-->  Bank Partner
                                    ^                                     |
                                    |                                     v
                           verified webhook  <----------------  customer transfers money
@@ -23,18 +23,31 @@ Merchant  --(secret key)-->  RexxPay API  --(pool assignment)-->  Bank Partner (
                         Transaction recorded + Wallet credited
 ```
 
+The "Bank Partner" above is one of two things depending on environment:
+
+- **Mock bank partner** (`bankPartner` module + `/api/mock-bank/simulate-transfer`,
+  dev-only) — generates fake pool accounts locally and fires a self-signed
+  webhook, so the full loop can be tested without any external dependency.
+- **RexxPay Bank** (real) — `bankPartner.service.js` can also provision real
+  pool accounts from an external RexxPay Bank instance over HTTP, authenticated
+  with `REXXPAY_BANK_ADMIN_KEY` against `REXXPAY_BANK_BASE_URL`. This is the
+  non-mock path and is what a production deployment would use.
+
 ### Modules
 
 | Module | Responsibility |
 |---|---|
 | `auth` | Merchant registration/login, JWT dashboard sessions, API key issuance |
-| `merchant` | Merchant profile, API keys |
+| `merchant` | Merchant profile, webhook URL configuration |
 | `customer` | Merchant's end-customers |
-| `bankPartner` | Simulated partner bank; provisions pooled account numbers |
+| `bankPartner` | Bank partner records; provisions pooled account numbers (mock locally, or real via RexxPay Bank) |
 | `virtualAccount` | Assigns pooled accounts to customers (never mints new ones) |
+| `payment` | Hosted checkout: creates the customer, assigns a virtual account, and returns a payment link (`pay.html`) a merchant can redirect to; `verify` polls the resulting transaction status |
 | `wallet` | Merchant settlement balance, atomic credit/debit |
 | `transaction` | Ledger of every payment event, idempotent recording |
+| `payout` | Outbound transfers to merchants' real bank accounts |
 | `webhook` | Verifies bank partner signatures; the ONLY path that can mark a payment successful |
+| `admin` | Operator-only endpoints (behind `INFRA_ADMIN_KEY`) to provision the account pool and check pool health |
 
 ### Key design decisions (and why)
 
@@ -64,6 +77,8 @@ must go.
 | `audit` | Append-only `AuditLog` — every webhook signature failure, flagged transaction, payout, and login writes a record. |
 | `webhook` (reworked) | The HTTP handler now only verifies the signature, persists the raw event (`WebhookEvent`), and acks. Actual processing happens async in `webhook.processor.js`, with retry/backoff and a `redriveStuckEvents()` call on startup for anything left mid-flight after a crash. This is the seam to swap in a real queue (SQS/BullMQ). |
 | `payout` | The outbound half of the system — merchants can request a payout to a real bank account. Debits the wallet, posts ledger entries, and calls a stubbed `sendToRealBank()` — swap that one function for a real disbursement provider and the rest (atomicity, limits, reversal-on-failure) is real. |
+| `payment` | Hosted checkout on top of the existing virtual-account primitive — `initialize` creates the customer + account and hands back a link; `verify` reads back the transaction status by `tx_ref`. |
+| `admin` | HTTP-based operator tooling (`provision-pool`, `pool-status`) so the account pool can be managed without shell access, guarded by `INFRA_ADMIN_KEY`. |
 | `config/limits.js` + risk checks in `transaction.service.js` | Per-transaction, daily, and velocity limits. Transactions that exceed them land as `status: 'flagged'` instead of auto-crediting, for manual review. |
 | `utils/sanctionsCheck.js` | **Stub only** — shows where real AML/sanctions screening (OFAC/UN/NFIU lists via a licensed provider) must run, with a dev-only denylist for testing the flagging path. |
 | `scripts/reconcile.js` | Compares our transaction records against a bank settlement export (JSON) and reports mismatches in both directions — money we think we have that the bank doesn't confirm, and money the bank settled that we never recorded. |
@@ -84,12 +99,49 @@ must go.
   move other people's money — that still requires a CBN license or a
   partnership with an already-licensed bank/PSB/MFB.
 
+## Frontend
+
+`public/` is a small static site served directly by Express (no build step):
+
+| Page | What it's for |
+|---|---|
+| `index.html` | Marketing/landing page |
+| `onboarding.html` | Merchant register/login (`?tab=login` or `?tab=register`) |
+| `dashboard.html` | Logged-in merchant dashboard — wallet balance, transactions, API keys |
+| `pay.html` | Customer-facing checkout page rendered by the `payment.initialize` link; polls `GET /api/virtual-accounts/:accountNumber/public-status` |
+
 ## Getting Started
 
 1. `npm install`
-2. Copy `.env.example` to `.env` and fill in `MONGO_URI`, `JWT_SECRET`,
-   `BANK_WEBHOOK_SECRET`
+2. Copy `.env.example` to `.env` and fill in:
+   - `MONGO_URI`, `JWT_SECRET` — required to run at all
+   - `BANK_WEBHOOK_SECRET` — must match whatever bank partner is signing webhooks
+   - `REXXPAY_BANK_BASE_URL`, `REXXPAY_BANK_ADMIN_KEY` — only needed if
+     provisioning real accounts from an external RexxPay Bank instance rather
+     than using the local mock bank
+   - `INFRA_ADMIN_KEY` — required to call the `/api/admin` routes
+   - `SANCTIONS_DENYLIST_DEV` — optional, comma-separated names to exercise
+     the flagging path locally (see `utils/sanctionsCheck.js`)
+   - `MAX_SINGLE_PAYMENT_MINOR`, `MAX_DAILY_INBOUND_MINOR`,
+     `VELOCITY_WINDOW_MINUTES`, `VELOCITY_MAX_COUNT`,
+     `MAX_SINGLE_PAYOUT_MINOR`, `VIRTUAL_ACCOUNT_EXPIRY_MINUTES` — optional,
+     override the defaults in `config/limits.js`
 3. `npm run dev`
+
+## Scripts
+
+Operational scripts, run manually or on a schedule (all read `.env` the same
+way the server does):
+
+| Command | What it does |
+|---|---|
+| `npm run provision-bank-pool [count]` | One-time (or top-up) provisioning of real pool accounts from RexxPay Bank. Requires `REXXPAY_BANK_ADMIN_KEY`. Default count: 10. |
+| `npm run release-stale-accounts` | Releases virtual accounts stuck in `assigned` past `VIRTUAL_ACCOUNT_EXPIRY_MINUTES` with no payment, back to the available pool. Intended to run on a cron every 5–15 minutes. |
+| `npm run reconcile -- path/to/settlement-file.json` | Compares local `Transaction` records against a bank settlement export and reports mismatches in both directions. |
+
+`webhook.processor.js` also self-heals on server startup: any webhook event
+left mid-processing after a crash is picked up by `redriveStuckEvents()`
+automatically — no manual step needed for that one.
 
 ## Testing the full flow locally
 
@@ -118,12 +170,30 @@ curl -X POST localhost:5000/api/mock-bank/simulate-transfer \
 curl localhost:5000/api/wallet -H "Authorization: Bearer sk_test_xxx"
 ```
 
+### Hosted checkout flow (alternative to steps 2–3 above)
+
+```bash
+# Creates the customer + assigns a virtual account in one call, returns a
+# checkout link (pay.html) you can redirect the end customer to.
+curl -X POST localhost:5000/api/payments/initialize \
+  -H "Authorization: Bearer sk_test_xxx" -H "Content-Type: application/json" \
+  -d '{"amount":5000,"customer":{"email":"jane@example.com","name":"Jane Doe"},"redirect_url":"https://example.com/thanks"}'
+
+# Poll for status by tx_ref once the customer has paid
+curl localhost:5000/api/payments/verify/<tx_ref> \
+  -H "Authorization: Bearer sk_test_xxx"
+```
+
 ## API Endpoints
 
 ### Auth
 - POST /api/auth/register
 - POST /api/auth/login
 - POST /api/auth/logout
+
+### Merchant
+- GET   /api/merchant/me
+- PATCH /api/merchant/webhook-url
 
 ### Customers
 - POST /api/customers
@@ -133,6 +203,11 @@ curl localhost:5000/api/wallet -H "Authorization: Bearer sk_test_xxx"
 - POST /api/virtual-accounts
 - GET  /api/virtual-accounts/:accountNumber
 - POST /api/virtual-accounts/:accountNumber/deactivate
+- GET  /api/virtual-accounts/:accountNumber/public-status  (no auth — safe for a browser-side checkout page to poll)
+
+### Payments (hosted checkout)
+- POST /api/payments/initialize
+- GET  /api/payments/verify/:tx_ref
 
 ### Wallet
 - GET /api/wallet
@@ -140,8 +215,16 @@ curl localhost:5000/api/wallet -H "Authorization: Bearer sk_test_xxx"
 ### Transactions
 - GET /api/transactions
 
+### Payouts
+- POST /api/payouts
+- GET  /api/payouts
+
 ### Webhooks
 - POST /api/webhooks/bank  (bank-partner-only, HMAC signature required)
+
+### Admin (operator-only, requires `INFRA_ADMIN_KEY`)
+- GET /api/admin/provision-pool  (`?bankSlug=&count=&adminKey=`, or `x-admin-key` header)
+- GET /api/admin/pool-status  (`?adminKey=`, or `x-admin-key` header)
 
 ### Dev-only
 - POST /api/mock-bank/simulate-transfer  (simulates a customer paying — disabled when NODE_ENV=production)

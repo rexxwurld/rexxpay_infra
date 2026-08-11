@@ -1,0 +1,29 @@
+// src/modules/subaccount/subaccountSettlement.model.js
+//
+// Mirrors Payout, but drains a Subaccount's accrued ledger balance
+// instead of a Merchant's wallet. Created when the parent merchant
+// settles a subaccount out to its bank account.
+
+const mongoose = require('mongoose');
+
+const subaccountSettlementSchema = new mongoose.Schema(
+  {
+    subaccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Subaccount', required: true },
+    parentMerchant: { type: mongoose.Schema.Types.ObjectId, ref: 'Merchant', required: true },
+    reference: { type: String, required: true, unique: true },
+
+    amount: { type: Number, required: true }, // minor units
+    currency: { type: String, required: true, default: 'NGN' },
+
+    status: {
+      type: String,
+      enum: ['pending', 'processing', 'successful', 'failed', 'reversed'],
+      default: 'pending',
+    },
+    failureReason: { type: String },
+    providerRef: { type: String, default: null },
+  },
+  { timestamps: true }
+);
+
+module.exports = mongoose.model('SubaccountSettlement', subaccountSettlementSchema);

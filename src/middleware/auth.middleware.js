@@ -1,25 +1,42 @@
 // src/middleware/auth.middleware.js
+const jwt = require('jsonwebtoken');
 const Merchant = require('../modules/merchant/merchant.model');
 const { hashSecretKey } = require('../utils/apiKeys');
+const { jwtSecret } = require('../config/env');
 
-// Every merchant-facing API call (create customer, assign account, etc.)
-// must be authenticated with the merchant's own secret key, exactly like
-// Paystack's "Authorization: Bearer sk_test_xxx" pattern.
 async function requireApiKey(req, res, next) {
   const header = req.headers.authorization || '';
-  const [, key] = header.split('Bearer ');
+  const [, bearer] = header.split('Bearer ');
 
-  if (!key) {
-    return res.status(401).json({ status: false, message: 'missing_api_key' });
+  if (bearer && bearer.startsWith('sk_')) {
+    const mode = bearer.startsWith('sk_live_') ? 'live' : bearer.startsWith('sk_test_') ? 'test' : null;
+    if (!mode) {
+      return res.status(401).json({ status: false, message: 'invalid_api_key' });
+    }
+
+    const hashField = mode === 'live' ? 'liveSecretKeyHash' : 'testSecretKeyHash';
+    const merchant = await Merchant.findOne({ [hashField]: hashSecretKey(bearer) });
+    if (!merchant) {
+      return res.status(401).json({ status: false, message: 'invalid_api_key' });
+    }
+    req.merchant = { id: merchant._id, businessName: merchant.businessName, mode };
+    return next();
   }
 
-  const merchant = await Merchant.findOne({ secretKeyHash: hashSecretKey(key) });
-  if (!merchant) {
-    return res.status(401).json({ status: false, message: 'invalid_api_key' });
+  const sessionToken = (bearer && !bearer.startsWith('sk_')) ? bearer : req.cookies?.token;
+  if (sessionToken) {
+    try {
+      const decoded = jwt.verify(sessionToken, jwtSecret);
+      const merchant = await Merchant.findById(decoded.id);
+      if (!merchant) throw new Error('merchant_not_found');
+      req.merchant = { id: merchant._id, businessName: merchant.businessName, mode: null };
+      return next();
+    } catch {
+      return res.status(401).json({ status: false, message: 'invalid_session' });
+    }
   }
 
-  req.merchant = { id: merchant._id, businessName: merchant.businessName };
-  next();
+  return res.status(401).json({ status: false, message: 'missing_api_key' });
 }
 
 module.exports = { requireApiKey };

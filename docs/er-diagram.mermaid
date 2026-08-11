@@ -2,12 +2,19 @@ erDiagram
     MERCHANT ||--o{ CUSTOMER : "onboards"
     MERCHANT ||--o{ VIRTUAL_ACCOUNT : "owns (via assignment)"
     MERCHANT ||--o{ WALLET : "has settlement wallet"
+    MERCHANT ||--o{ PAYOUT : "requests"
     CUSTOMER ||--o| VIRTUAL_ACCOUNT : "assigned to"
     CUSTOMER ||--o{ TRANSACTION : "makes"
     VIRTUAL_ACCOUNT ||--o{ TRANSACTION : "receives"
     BANK_PARTNER ||--o{ VIRTUAL_ACCOUNT : "provisions (pool)"
     WALLET ||--o{ TRANSACTION : "credited by"
     TRANSACTION ||--o| WEBHOOK_EVENT : "logged from"
+    TRANSACTION ||--o{ LEDGER_ENTRY : "posts"
+    PAYOUT ||--o{ LEDGER_ENTRY : "posts"
+    WALLET ||--o{ LEDGER_ENTRY : "reconstructed from"
+    MERCHANT ||--o{ AUDIT_LOG : "actor on"
+    TRANSACTION ||--o| AUDIT_LOG : "may generate"
+    PAYOUT ||--o| AUDIT_LOG : "may generate"
 
     MERCHANT {
         string merchant_id PK
@@ -47,7 +54,7 @@ erDiagram
     WALLET {
         string wallet_id PK
         string merchant_id FK
-        integer balance "minor units"
+        integer balance "minor units - cache, ledger is source of truth"
         string currency
         datetime updated_at
     }
@@ -58,13 +65,16 @@ erDiagram
         string customer_id FK
         string merchant_id FK
         string wallet_id FK
-        integer amount_expected "minor units"
+        integer amount_expected "minor units, nullable"
         integer amount_received "minor units"
         string currency
-        string status "pending | succeeded | partially_paid | overpaid | failed"
-        string idempotency_key
+        string status "pending | success | partial | over | failed | flagged"
+        string flag_reason "set when status = flagged"
+        string channel
+        string bank_reference "bank partner's own transaction ID"
+        string reference "our idempotency key, unique"
         datetime created_at
-        datetime confirmed_at
+        datetime updated_at
     }
 
     WEBHOOK_EVENT {
@@ -74,4 +84,46 @@ erDiagram
         string payload_signature
         string verification_status "verified | invalid | duplicate"
         datetime received_at
+    }
+
+    PAYOUT {
+        string payout_id PK
+        string merchant_id FK
+        string reference "our idempotency key, unique"
+        integer amount "minor units"
+        string currency
+        string destination_bank_code
+        string destination_account_number
+        string destination_account_name
+        string status "pending | processing | successful | failed | reversed"
+        string failure_reason
+        string provider_ref "real disbursement provider's transaction ID, once wired up"
+        datetime created_at
+        datetime updated_at
+    }
+
+    LEDGER_ENTRY {
+        string entry_id PK
+        string entry_group "groups the debit+credit pair for one economic event"
+        string account_type "merchant_wallet | platform_revenue | payout_clearing | suspense"
+        string account_ref "Merchant _id, or a fixed platform-level slug"
+        string direction "debit | credit"
+        integer amount "always positive, minor units"
+        string currency
+        string source_type "incoming_payment | payout | adjustment | reversal"
+        string source_ref "Transaction._id or Payout._id"
+        string description
+        datetime created_at
+    }
+
+    AUDIT_LOG {
+        string log_id PK
+        string actor_type "merchant | system | bank_partner | admin"
+        string actor_ref "merchant id, 'webhook', 'reconciliation_job', etc."
+        string action "e.g. merchant.login, webhook.signature_invalid, payout.created"
+        string entity_type "e.g. Transaction, Payout, Merchant"
+        string entity_ref
+        string ip
+        string severity "info | warning | critical"
+        datetime created_at
     }

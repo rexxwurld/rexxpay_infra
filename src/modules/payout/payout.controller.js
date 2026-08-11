@@ -1,18 +1,33 @@
 // src/modules/payout/payout.controller.js
-const { requestPayout, listForMerchant } = require('./payout.service');
+const { requestPayout, requestBulkPayout, listForMerchant } = require('./payout.service');
 
 async function create(req, res) {
   try {
-    const { amount, currency, destinationBankCode, destinationAccountNumber, destinationAccountName } = req.body;
+    const { amount, currency, recipientCode, destinationBankCode, destinationAccountNumber, destinationAccountName } = req.body;
     const payout = await requestPayout({
       merchantId: req.merchant.id,
       amount,
       currency,
+      recipientCode,
       destinationBankCode,
       destinationAccountNumber,
       destinationAccountName,
     });
     res.status(201).json({ status: true, data: payout });
+  } catch (err) {
+    res.status(400).json({ status: false, message: err.message });
+  }
+}
+
+async function createBulk(req, res) {
+  try {
+    const { currency, items } = req.body;
+    const result = await requestBulkPayout({
+      merchantId: req.merchant.id,
+      currency,
+      items,
+    });
+    res.status(201).json({ status: true, data: result });
   } catch (err) {
     res.status(400).json({ status: false, message: err.message });
   }
@@ -27,4 +42,4 @@ async function list(req, res) {
   }
 }
 
-module.exports = { create, list };
+module.exports = { create, createBulk, list };

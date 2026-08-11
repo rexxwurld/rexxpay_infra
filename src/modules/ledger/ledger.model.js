@@ -25,7 +25,7 @@ const ledgerEntrySchema = new mongoose.Schema(
     // "platform_fee" or "suspense" account - without a schema change.
     accountType: {
       type: String,
-      enum: ['merchant_wallet', 'platform_revenue', 'payout_clearing', 'suspense'],
+      enum: ['merchant_wallet', 'platform_revenue', 'payout_clearing', 'subaccount_settlement', 'suspense'],
       required: true,
     },
     // For merchant_wallet entries, the Merchant _id. For platform-level
@@ -39,7 +39,7 @@ const ledgerEntrySchema = new mongoose.Schema(
     // What caused this entry, for traceability back to the source record.
     sourceType: {
       type: String,
-      enum: ['incoming_payment', 'payout', 'adjustment', 'reversal'],
+      enum: ['incoming_payment', 'payout', 'refund', 'adjustment', 'reversal'],
       required: true,
     },
     sourceRef: { type: String, required: true }, // e.g. Transaction._id or Payout._id

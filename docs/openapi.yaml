@@ -1,0 +1,546 @@
+openapi: 3.0.3
+info:
+  title: RexxPay API
+  description: >
+    RexxPay - Paystack-style payment infrastructure: merchants, customers,
+    dedicated virtual accounts, wallets, transactions, payouts, refunds,
+    subaccounts, subscriptions and disputes. Served under a versioned
+    path (/api/v1); the unversioned /api alias is kept for back-compat
+    and will eventually be removed.
+  version: "2.0.0"
+servers:
+  - url: /api/v1
+    description: Current API version
+  - url: /api
+    description: Deprecated alias - use /api/v1 instead
+
+tags:
+  - name: Auth
+  - name: Merchant
+  - name: Customers
+  - name: Virtual Accounts
+  - name: Checkout
+  - name: Wallet
+  - name: Transactions
+  - name: Payouts
+  - name: Refunds
+  - name: Subaccounts
+  - name: Recipients
+  - name: Subscriptions
+  - name: Disputes
+  - name: Webhooks
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: "sk_test_... or sk_live_..."
+      description: "Merchant secret key, sent as `Authorization: Bearer sk_test_xxx`."
+    AdminKeyAuth:
+      type: apiKey
+      in: header
+      name: x-admin-key
+      description: Operator-only key. Never given to merchants.
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        status: { type: boolean, example: false }
+        message: { type: string, example: "invalid_api_key" }
+
+    Wallet:
+      type: object
+      properties:
+        _id: { type: string }
+        merchant: { type: string }
+        balance: { type: integer, description: "Minor units (e.g. kobo)" }
+        currency: { type: string, example: NGN }
+
+    Transaction:
+      type: object
+      properties:
+        _id: { type: string }
+        reference: { type: string }
+        merchant: { type: string }
+        customer: { type: string }
+        amountReceived: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, success, partial, over, failed, flagged]
+        platformFee: { type: integer }
+        netAmount: { type: integer }
+
+    Payout:
+      type: object
+      properties:
+        _id: { type: string }
+        reference: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, processing, successful, failed]
+
+    Refund:
+      type: object
+      properties:
+        _id: { type: string }
+        reference: { type: string }
+        transaction: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, processing, successful, failed, reversed]
+
+    Plan:
+      type: object
+      properties:
+        _id: { type: string }
+        planCode: { type: string }
+        name: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        interval:
+          type: string
+          enum: [daily, weekly, monthly, yearly]
+        intervalCount: { type: integer }
+
+    Subscription:
+      type: object
+      properties:
+        _id: { type: string }
+        subscriptionCode: { type: string }
+        plan: { type: string }
+        customer: { type: string }
+        status:
+          type: string
+          enum: [active, past_due, cancelled]
+        currentPeriodStart: { type: string, format: date-time }
+        currentPeriodEnd: { type: string, format: date-time }
+
+    Invoice:
+      type: object
+      properties:
+        _id: { type: string }
+        invoiceNumber: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, paid, failed, void]
+        dueDate: { type: string, format: date-time }
+
+    Dispute:
+      type: object
+      properties:
+        _id: { type: string }
+        disputeCode: { type: string }
+        transaction: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        reason:
+          type: string
+          enum: [fraudulent, duplicate, product_not_received, product_unacceptable, unrecognized, other]
+        status:
+          type: string
+          enum: [open, under_review, won, lost]
+        evidenceDueBy: { type: string, format: date-time }
+
+paths:
+  /wallet:
+    get:
+      tags: [Wallet]
+      summary: Get a wallet by currency (defaults to NGN)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: currency
+          schema: { type: string, example: NGN }
+      responses:
+        "200":
+          description: Wallet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Wallet" }
+
+  /wallet/all:
+    get:
+      tags: [Wallet]
+      summary: List every currency wallet the merchant holds
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Wallets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Wallet" }
+
+  /transactions:
+    get:
+      tags: [Transactions]
+      summary: List transactions for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Transaction" }
+
+  /payouts:
+    post:
+      tags: [Payouts]
+      summary: Request a payout to a bank account
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, destinationBankCode, destinationAccountNumber, destinationAccountName]
+              properties:
+                amount: { type: integer, description: "Minor units" }
+                currency: { type: string, example: NGN }
+                recipientCode: { type: string }
+                destinationBankCode: { type: string }
+                destinationAccountNumber: { type: string }
+                destinationAccountName: { type: string }
+      responses:
+        "201":
+          description: Payout created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Payout" }
+        "400":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      tags: [Payouts]
+      summary: List payouts
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Payouts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Payout" }
+
+  /payouts/bulk:
+    post:
+      tags: [Payouts]
+      summary: Request up to 100 payouts in one call
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                currency: { type: string, example: NGN }
+                items:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: object
+                    properties:
+                      amount: { type: integer }
+                      recipientCode: { type: string }
+      responses:
+        "201":
+          description: Bulk payout accepted
+
+  /refunds:
+    post:
+      tags: [Refunds]
+      summary: Refund a transaction (fully or partially)
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transactionId, destinationBankCode, destinationAccountNumber, destinationAccountName]
+              properties:
+                transactionId: { type: string }
+                amount: { type: integer, description: "Omit to refund the full refundable amount" }
+                reason: { type: string }
+                destinationBankCode: { type: string }
+                destinationAccountNumber: { type: string }
+                destinationAccountName: { type: string }
+      responses:
+        "201":
+          description: Refund created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Refund" }
+    get:
+      tags: [Refunds]
+      summary: List refunds
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Refunds
+
+  /subscriptions/plans:
+    post:
+      tags: [Subscriptions]
+      summary: Create a billing plan
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, amount, interval]
+              properties:
+                name: { type: string }
+                amount: { type: integer }
+                currency: { type: string, example: NGN }
+                interval: { type: string, enum: [daily, weekly, monthly, yearly] }
+                intervalCount: { type: integer, default: 1 }
+      responses:
+        "201":
+          description: Plan created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Plan" }
+    get:
+      tags: [Subscriptions]
+      summary: List plans
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Plans
+
+  /subscriptions:
+    post:
+      tags: [Subscriptions]
+      summary: Subscribe a customer to a plan
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerId, planCode]
+              properties:
+                customerId: { type: string }
+                planCode: { type: string }
+      responses:
+        "201":
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Subscription" }
+    get:
+      tags: [Subscriptions]
+      summary: List subscriptions
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Subscriptions
+
+  /subscriptions/{id}/cancel:
+    post:
+      tags: [Subscriptions]
+      summary: Cancel a subscription
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Cancelled subscription
+
+  /subscriptions/invoices:
+    get:
+      tags: [Subscriptions]
+      summary: List invoices
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: subscriptionId
+          schema: { type: string }
+      responses:
+        "200":
+          description: Invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Invoice" }
+
+  /disputes:
+    get:
+      tags: [Disputes]
+      summary: List disputes for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Disputes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Dispute" }
+    post:
+      tags: [Disputes]
+      summary: "Open a dispute (ops-only - represents a chargeback notice from a bank)"
+      security: [{ AdminKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [merchantId, transactionId]
+              properties:
+                merchantId: { type: string }
+                transactionId: { type: string }
+                amount: { type: integer }
+                reason:
+                  type: string
+                  enum: [fraudulent, duplicate, product_not_received, product_unacceptable, unrecognized, other]
+                reasonDetail: { type: string }
+      responses:
+        "201":
+          description: Dispute opened
+
+  /disputes/{id}/evidence:
+    post:
+      tags: [Disputes]
+      summary: Submit evidence on an open dispute
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description]
+              properties:
+                description: { type: string }
+                url: { type: string }
+      responses:
+        "200":
+          description: Evidence recorded
+
+  /disputes/{id}/resolve:
+    post:
+      tags: [Disputes]
+      summary: Resolve a dispute (ops-only)
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [won, lost] }
+                resolution: { type: string }
+      responses:
+        "200":
+          description: Dispute resolved
+
+  /admin/merchants/{id}/fees:
+    patch:
+      tags: [Merchant]
+      summary: "Set a per-merchant platform fee override (ops-only)"
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                percentageBps: { type: integer, description: "Basis points, e.g. 150 = 1.5%" }
+                fixedMinor: { type: integer }
+                capMinor: { type: integer }
+      responses:
+        "200":
+          description: Updated merchant fee config
+
+  /webhooks:
+    post:
+      tags: [Webhooks]
+      summary: Bank partner inbound-payment notification (not merchant-callable)
+      responses:
+        "200":
+          description: Accepted for async processing
