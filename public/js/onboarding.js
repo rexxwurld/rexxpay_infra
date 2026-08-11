@@ -32,7 +32,7 @@
     const data = Object.fromEntries(new FormData(registerForm));
     try {
       const res = await api('/api/auth/register', { method: 'POST', body: JSON.stringify(data) });
-      document.getElementById('revealSecret').textContent = res.data.secretKey;
+      document.getElementById('revealSecret').textContent = res.data.testSecretKey;
       document.getElementById('revealWebhookSecret').textContent = res.data.webhookSecret;
       registerForm.style.display = 'none';
       keyReveal.style.display = 'block';
