@@ -4,7 +4,376 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>RexxPay — Dashboard</title>
-<link rel="stylesheet" href="/css/style.css" />
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  :root {
+    --sky: #0ea5e9;
+    --sky-dark: #0284c7;
+    --sky-darker: #0369a1;
+    --sky-light: #e0f2fe;
+    --sky-lighter: #f0f9ff;
+    --ink: #0f2133;
+    --ink-dim: #64748b;
+    --ink-faint: #94a3b8;
+    --line: #e2e8f0;
+    --line-soft: #eef2f7;
+    --white: #ffffff;
+    --green: #16a34a;
+    --green-bg: #dcfce7;
+    --amber: #d97706;
+    --amber-bg: #fef3c7;
+    --red: #dc2626;
+    --red-bg: #fee2e2;
+    --blue: #2563eb;
+    --blue-bg: #dbeafe;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100vh;
+    background: #f6fafd;
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: inherit; text-decoration: none; }
+
+  /* ---------- Top nav ---------- */
+  .dash-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 28px;
+    background: var(--white);
+    border-bottom: 1px solid var(--line);
+    position: sticky;
+    top: 0;
+    z-index: 40;
+  }
+  .dash-nav .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--sky-darker);
+  }
+  .dash-nav .brand .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--sky);
+    box-shadow: 0 0 0 4px var(--sky-light);
+  }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    font-family: var(--sans);
+    font-size: 13.5px;
+    font-weight: 600;
+    padding: 9px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--white);
+    color: var(--ink);
+    cursor: pointer;
+    transition: all .15s ease;
+  }
+  .btn:hover { border-color: var(--sky); color: var(--sky-darker); }
+  .btn-primary {
+    background: var(--sky);
+    border-color: var(--sky);
+    color: var(--white);
+    box-shadow: 0 1px 2px rgba(14,165,233,0.25);
+  }
+  .btn-primary:hover { background: var(--sky-dark); border-color: var(--sky-dark); color: var(--white); }
+  .btn-ghost { background: transparent; border-color: transparent; color: var(--ink-dim); }
+  .btn-ghost:hover { background: var(--sky-lighter); color: var(--sky-darker); }
+  .btn-sm { padding: 6px 12px; font-size: 12.5px; }
+  .btn-danger-outline { border-color: var(--red); color: var(--red); background: var(--white); }
+  .btn-danger-outline:hover { background: var(--red-bg); }
+
+  /* ---------- Shell / layout ---------- */
+  .dash-shell { max-width: 1160px; margin: 0 auto; padding: 28px 24px 64px; }
+
+  .dash-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .dash-head h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .dash-head .biz {
+    color: var(--ink-dim);
+    font-size: 13.5px;
+    font-family: var(--mono);
+    margin-top: 4px;
+  }
+  .mode-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: var(--sky-lighter);
+    color: var(--sky-darker);
+    border: 1px solid var(--sky-light);
+    vertical-align: middle;
+  }
+  .mode-badge.live { background: var(--green-bg); color: var(--green); border-color: #bbf0d0; }
+
+  .ledger-tag {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    color: var(--ink-dim);
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 7px 14px;
+  }
+  .ledger-tag .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px rgba(22,163,74,.5);
+  }
+
+  /* ---------- Stat cards ---------- */
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .stat {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+    box-shadow: 0 2px 10px -4px rgba(15,33,51,0.06);
+  }
+  .stat .lbl {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 8px;
+  }
+  .stat .val { font-size: 22px; font-weight: 800; color: var(--ink); font-family: var(--mono); }
+  .stat .val.green { color: var(--green); }
+  .stat .val.amber { color: var(--amber); }
+  .stat .val.blue { color: var(--sky-dark); }
+  .stat .sub-note { font-size: 11.5px; color: var(--ink-faint); margin-top: 6px; }
+
+  /* ---------- Section tabs ---------- */
+  .section-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 22px;
+  }
+  .section-tab {
+    font-family: var(--sans);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-dim);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 10px 6px;
+    margin-right: 20px;
+    cursor: pointer;
+  }
+  .section-tab:hover { color: var(--sky-darker); }
+  .section-tab.active { color: var(--sky-darker); border-bottom-color: var(--sky); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ---------- Panels ---------- */
+  .panel {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    margin-bottom: 22px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px -4px rgba(15,33,51,0.05);
+  }
+  .panel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 18px 22px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .panel-head h2 {
+    font-size: 14px;
+    margin: 0;
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .panel-head .hint { font-size: 12px; color: var(--ink-faint); }
+  .panel-body { padding: 20px 22px; }
+
+  /* ---------- Forms ---------- */
+  .inline-form { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 6px; min-width: 180px; flex: 1; }
+  .field label { font-size: 12px; color: var(--ink-dim); font-weight: 600; }
+  .field input {
+    width: 100%;
+    background: var(--sky-lighter);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-size: 13.5px;
+  }
+  .field input:focus { outline: none; border-color: var(--sky); background: var(--white); box-shadow: 0 0 0 3px var(--sky-light); }
+
+  /* ---------- Tables ---------- */
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    font-size: 11px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 0 22px 10px;
+    font-weight: 600;
+  }
+  td { padding: 12px 22px; font-size: 13.5px; border-top: 1px solid var(--line-soft); }
+  tr:hover td { background: var(--sky-lighter); }
+  .empty { color: var(--ink-faint); font-size: 13.5px; padding: 34px 22px; text-align: center; }
+
+  .status-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .status-success, .status-successful { background: var(--green-bg); color: var(--green); }
+  .status-pending, .status-processing, .status-partial { background: var(--amber-bg); color: var(--amber); }
+  .status-flagged, .status-failed { background: var(--red-bg); color: var(--red); }
+  .status-over { background: var(--blue-bg); color: var(--blue); }
+  .status-reversed { background: var(--line-soft); color: var(--ink-dim); }
+
+  /* ---------- Chips / search ---------- */
+  .chip-row { display: flex; gap: 8px; flex-wrap: wrap; padding: 16px 22px 0; }
+  .chip {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-dim);
+    background: var(--sky-lighter);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 5px 13px;
+    cursor: pointer;
+  }
+  .chip:hover { border-color: var(--sky); }
+  .chip.active { color: var(--white); background: var(--sky); border-color: var(--sky); }
+  .search-row { padding: 14px 22px 0; }
+  .search-row input {
+    width: 100%;
+    max-width: 360px;
+    background: var(--sky-lighter);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 9px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .search-row input:focus { outline: none; border-color: var(--sky); background: var(--white); }
+
+  /* ---------- Key reveal / info blocks ---------- */
+  .key-reveal { background: var(--sky-lighter); border: 1px solid var(--sky-light); border-radius: 10px; padding: 16px; margin-top: 14px; }
+  .key-reveal .warn { color: var(--amber); font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+  .key-row { margin-bottom: 4px; }
+  .key-row .k-label { font-size: 11px; color: var(--ink-dim); font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .key-row .k-val {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 9px 11px;
+    word-break: break-all;
+    user-select: all;
+  }
+  .link-row { display: flex; align-items: center; gap: 8px; }
+  .link-row .k-val { flex: 1; }
+  .copy-btn { flex: none; }
+  .link-card { background: var(--sky-lighter); border: 1px solid var(--sky-light); border-radius: 10px; padding: 16px; margin-top: 16px; }
+
+  .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+  .info-item .k-label { font-size: 11px; color: var(--ink-dim); font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+  .k-val2 { font-family: var(--mono); font-size: 13.5px; color: var(--ink); word-break: break-all; }
+
+  .key-block {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 14px;
+  }
+  .key-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+  .key-block-head .title { font-size: 13.5px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .key-block .desc { font-size: 12.5px; color: var(--ink-dim); margin: 0 0 12px; line-height: 1.5; }
+
+  /* ---------- Toast ---------- */
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--ink);
+    border: 1px solid var(--ink);
+    color: var(--white);
+    padding: 12px 18px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: all .2s ease;
+    pointer-events: none;
+    z-index: 50;
+    box-shadow: 0 8px 24px rgba(15,33,51,.18);
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.err { background: var(--red); border-color: var(--red); }
+
+  @media (max-width: 860px) {
+    .stat-row { grid-template-columns: repeat(2, 1fr); }
+    .info-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .stat-row { grid-template-columns: 1fr; }
+    .dash-shell { padding: 20px 14px 48px; }
+  }
+</style>
+
 </head>
 <body class="dashboard-page">
 
@@ -180,12 +549,12 @@
             <div class="k-val2" id="setBizEmail">—</div>
           </div>
           <div class="info-item">
-            <div class="k-label">Public key</div>
-            <div class="k-val2" id="setPubKey">—</div>
+            <div class="k-label">Test public key</div>
+            <div class="k-val2" id="setTestPubKey">—</div>
           </div>
           <div class="info-item">
-            <div class="k-label">Mode</div>
-            <div class="k-val2" id="setMode">—</div>
+            <div class="k-label">Live public key</div>
+            <div class="k-val2" id="setLivePubKey">—</div>
           </div>
         </div>
       </div>
@@ -193,17 +562,29 @@
 
     <div class="panel">
       <div class="panel-head">
-        <h2>Secret key</h2>
+        <h2>API secret keys</h2>
         <span class="hint">Used to authenticate API requests — shown once, never retrievable after</span>
       </div>
       <div class="panel-body">
-        <p style="color:var(--paper-dim); font-size:13.5px; margin-top:0;">
-          For security, RexxPay never stores your secret key in a readable form —
-          only its hash. If you've lost it, generate a new one below. Your
-          current key stops working the instant you do.
-        </p>
-        <button class="btn" id="regenKeyBtn">Regenerate secret key</button>
-        <div id="regenKeyResult"></div>
+
+        <div class="key-block">
+          <div class="key-block-head">
+            <div class="title"><span class="mode-badge">test</span>Test secret key</div>
+            <button class="btn btn-sm" id="regenTestKeyBtn">Regenerate</button>
+          </div>
+          <p class="desc">Safe to use for building and QA — never touches real money.</p>
+          <div id="regenTestKeyResult"></div>
+        </div>
+
+        <div class="key-block">
+          <div class="key-block-head">
+            <div class="title"><span class="mode-badge live">live</span>Live secret key</div>
+            <button class="btn btn-sm btn-danger-outline" id="regenLiveKeyBtn">Regenerate</button>
+          </div>
+          <p class="desc">Authenticates real transactions. Your live key was shown once at signup — if you didn't save it, generate a new one below. The old one stops working immediately.</p>
+          <div id="regenLiveKeyResult"></div>
+        </div>
+
       </div>
     </div>
 
