@@ -24,8 +24,8 @@ function sleep(ms) {
 // Polls the webhook event's real processing outcome instead of trusting
 // the initial POST's 202, which only means "queued", not "succeeded".
 async function pollOutcome(eventId) {
-  const maxAttempts = 10;
-  const delayMs = 1200;
+  const maxAttempts = 30;
+  const delayMs = 1000;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     await sleep(delayMs);
