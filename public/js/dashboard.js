@@ -44,8 +44,8 @@ async function loadProfile() {
 
   document.getElementById('setBizName').textContent = res.data.businessName;
   document.getElementById('setBizEmail').textContent = res.data.email;
-  document.getElementById('setPubKey').textContent = res.data.publicKey || '—';
-  document.getElementById('setMode').textContent = mode;
+  document.getElementById('setTestPubKey').textContent = res.data.testPublicKey || '—';
+  document.getElementById('setLivePubKey').textContent = res.data.livePublicKey || '—';
 }
 
 async function loadWallet() {
@@ -235,32 +235,43 @@ document.getElementById('payoutForm').addEventListener('submit', async (e) => {
   }
 });
 
-document.getElementById('regenKeyBtn').addEventListener('click', async () => {
-  const confirmed = window.confirm(
-    'Generate a new secret key? Your current key will stop working immediately — ' +
-    'update it anywhere you use it before continuing.'
-  );
-  if (!confirmed) return;
+function wireRegenButton(btnId, resultId, mode) {
+  document.getElementById(btnId).addEventListener('click', async () => {
+    const confirmed = window.confirm(
+      `Generate a new ${mode} secret key? Your current ${mode} key will stop working ` +
+      'immediately — update it anywhere you use it before continuing.'
+    );
+    if (!confirmed) return;
 
-  try {
-    const res = await api('/api/merchant/regenerate-key', { method: 'POST' });
-    document.getElementById('regenKeyResult').innerHTML = `
-      <div class="key-reveal" style="margin-top:16px;">
-        <div class="warn">Store this now — it will not be shown again.</div>
-        <div class="key-row">
-          <div class="k-label">Secret key</div>
-          <div class="link-row">
-            <div class="k-val" id="newSecretKey">${res.data.secretKey}</div>
-            <button type="button" class="btn btn-sm copy-btn" id="copyKeyBtn">Copy</button>
+    try {
+      const res = await api('/api/merchant/regenerate-key', {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
+      });
+      const resultBox = document.getElementById(resultId);
+      const valId = `${resultId}Val`;
+      const copyId = `${resultId}Copy`;
+      resultBox.innerHTML = `
+        <div class="key-reveal">
+          <div class="warn">Store this now — it will not be shown again.</div>
+          <div class="key-row">
+            <div class="k-label">${mode} secret key</div>
+            <div class="link-row">
+              <div class="k-val" id="${valId}">${res.data.secretKey}</div>
+              <button type="button" class="btn btn-sm copy-btn" id="${copyId}">Copy</button>
+            </div>
           </div>
-        </div>
-      </div>`;
-    document.getElementById('copyKeyBtn').addEventListener('click', () => copyToClipboard(res.data.secretKey));
-    toast('New secret key generated');
-  } catch (err) {
-    toast(err.message.replace(/_/g, ' '), true);
-  }
-});
+        </div>`;
+      document.getElementById(copyId).addEventListener('click', () => copyToClipboard(res.data.secretKey));
+      toast(`New ${mode} secret key generated`);
+    } catch (err) {
+      toast(err.message.replace(/_/g, ' '), true);
+    }
+  });
+}
+
+wireRegenButton('regenTestKeyBtn', 'regenTestKeyResult', 'test');
+wireRegenButton('regenLiveKeyBtn', 'regenLiveKeyResult', 'live');
 
 document.querySelectorAll('#txFilters .chip').forEach(chip => {
   chip.addEventListener('click', () => {
