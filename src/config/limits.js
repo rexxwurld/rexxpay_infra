@@ -30,4 +30,12 @@ module.exports = {
   // How long a merchant has to submit evidence on a dispute before it's
   // eligible for resolution against them by default.
   DISPUTE_EVIDENCE_WINDOW_DAYS: Number(process.env.DISPUTE_EVIDENCE_WINDOW_DAYS || 7),
+
+  // Automatic Pool Manager: if a bank partner's available-account count
+  // drops at or below this, top it back up. Checked per-bank.
+  POOL_MIN_THRESHOLD: Number(process.env.POOL_MIN_THRESHOLD || 20),
+
+  // How many accounts to provision in one top-up pass when a bank's pool
+  // is below POOL_MIN_THRESHOLD.
+  POOL_TOPUP_COUNT: Number(process.env.POOL_TOPUP_COUNT || 20),
 };
