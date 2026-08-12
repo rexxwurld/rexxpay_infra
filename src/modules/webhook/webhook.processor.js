@@ -62,7 +62,12 @@ async function processEvent(eventId) {
       const merchant = await Merchant.findById(account.merchant);
       dispatchMerchantWebhook(merchant, {
         type: 'transaction.success',
-        data: transaction,
+        // account.reference is the merchant's own tx_ref (set at
+        // /payments/initialize time). The bare Transaction document only
+        // carries the bank's reference/bankReference, so without this a
+        // merchant's webhook receiver has no reliable way to match the
+        // notification back to one of their orders.
+        data: { ...transaction.toObject(), tx_ref: account.reference },
       }).catch(() => {});
 
       // If this payment landed on an invoice's virtual account, mark it
