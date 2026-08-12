@@ -4,6 +4,7 @@ const BankPartner = require('./bankPartner.model');
 const VirtualAccount = require('../virtualAccount/virtualAccount.model');
 const generateAccountNumber = require('../../utils/generateAccountNumber');
 const { rexxPayBankBaseUrl, rexxPayBankAdminKey } = require('../../config/env');
+const limits = require('../../config/limits');
 
 // Seeds the default partner bank if it doesn't already exist.
 // 'rexxpay-bank' is the REAL bank (rexxpay.onrender.com) - accounts under
@@ -89,4 +90,77 @@ async function provisionRealAccountsFromBank(bank, count) {
   return bank;
 }
 
-module.exports = { ensureDefaultBankPartners, provisionAccountPool };
+/*
+|--------------------------------------------------------------------------
+| AUTOMATIC POOL MANAGER
+|--------------------------------------------------------------------------
+|
+| Checks every bank partner's available-account count and tops it up if
+| it's at or below limits.POOL_MIN_THRESHOLD. Meant to be called on a
+| schedule (see scripts/auto-provision-pool.js) so customers never have
+| to wait on a manual admin action - the admin dashboard/route stays
+| available for exceptions and manual intervention.
+|
+| Returns a per-bank report so callers (script/log/future dashboard) can
+| show what happened.
+*/
+async function maintainAccountPools({
+  threshold = limits.POOL_MIN_THRESHOLD,
+  topUpCount = limits.POOL_TOPUP_COUNT,
+} = {}) {
+  const banks = await BankPartner.find();
+  const results = [];
+
+  for (const bank of banks) {
+    const available = await VirtualAccount.countDocuments({
+      bank: bank._id,
+      status: 'available',
+    });
+
+    if (available > threshold) {
+      results.push({
+        bank: bank.slug,
+        availableBefore: available,
+        threshold,
+        action: 'none',
+      });
+      continue;
+    }
+
+    try {
+      await provisionAccountPool(bank.slug, topUpCount);
+
+      const availableAfter = await VirtualAccount.countDocuments({
+        bank: bank._id,
+        status: 'available',
+      });
+
+      results.push({
+        bank: bank.slug,
+        availableBefore: available,
+        availableAfter,
+        threshold,
+        provisioned: topUpCount,
+        action: 'provisioned',
+      });
+    } catch (err) {
+      // Don't let one bank's failure (e.g. missing admin key, provider
+      // outage) stop the others from being checked/topped up.
+      results.push({
+        bank: bank.slug,
+        availableBefore: available,
+        threshold,
+        action: 'failed',
+        error: err.message,
+      });
+    }
+  }
+
+  return results;
+}
+
+module.exports = {
+  ensureDefaultBankPartners,
+  provisionAccountPool,
+  maintainAccountPools,
+};
