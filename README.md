@@ -127,6 +127,9 @@ must go.
      `MAX_SINGLE_PAYOUT_MINOR`, `VIRTUAL_ACCOUNT_EXPIRY_MINUTES`,
      `DISPUTE_EVIDENCE_WINDOW_DAYS` — optional, override the defaults in
      `config/limits.js`
+   - `POOL_MIN_THRESHOLD`, `POOL_TOPUP_COUNT` — optional, override the
+     defaults in `config/limits.js` that control when
+     `scripts/auto-provision-pool.js` tops up a bank's account pool
    - `PLATFORM_FEE_BPS`, `PLATFORM_FEE_FIXED_MINOR`, `PLATFORM_FEE_CAP_MINOR`
      — optional, override the default platform fee charged per transaction
      in `config/fees.js`
@@ -140,7 +143,10 @@ way the server does):
 | Command | What it does |
 |---|---|
 | `npm run provision-bank-pool [count]` | One-time (or top-up) provisioning of real pool accounts from RexxPay Bank. Requires `REXXPAY_BANK_ADMIN_KEY`. Default count: 10. |
+| `npm run auto-provision-pool` | Checks each bank partner's available-account count and tops it up by `POOL_TOPUP_COUNT` whenever it drops to or below `POOL_MIN_THRESHOLD`. Intended to run on a cron. |
 | `npm run release-stale-accounts` | Releases virtual accounts stuck in `assigned` past `VIRTUAL_ACCOUNT_EXPIRY_MINUTES` with no payment, back to the available pool. Intended to run on a cron every 5–15 minutes. |
+| `npm run reactivate-expired-accounts` | Companion to the release job — moves `deactivated` accounts whose `cooldownUntil` has passed back to `available` so they can be reassigned. |
+| `npm run generate-invoices` | Sweeps subscriptions with a due `nextBillingDate`, creates the `Invoice` + a virtual account for the customer to pay it into. Intended to run on a cron. |
 | `npm run reconcile -- path/to/settlement-file.json` | Compares local `Transaction` records against a bank settlement export and reports mismatches in both directions. |
 
 `webhook.processor.js` also self-heals on server startup: any webhook event
