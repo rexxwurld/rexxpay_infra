@@ -63,6 +63,20 @@ app.get('/pay/:checkoutToken', (req, res) => {
   );
 });
 
+// Operator dashboard (pool status + manual provisioning). Auth happens
+// client-side against the existing key-protected /api/admin/* routes -
+// see public/js/admin.js and src/middleware/adminKey.middleware.js.
+app.get('/admin', (req, res) => {
+  res.sendFile(
+    path.join(
+      __dirname,
+      '..',
+      'public',
+      'admin.html'
+    )
+  );
+});
+
 
 // Static frontend files.
 app.use(
