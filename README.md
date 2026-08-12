@@ -124,8 +124,12 @@ must go.
      the flagging path locally (see `utils/sanctionsCheck.js`)
    - `MAX_SINGLE_PAYMENT_MINOR`, `MAX_DAILY_INBOUND_MINOR`,
      `VELOCITY_WINDOW_MINUTES`, `VELOCITY_MAX_COUNT`,
-     `MAX_SINGLE_PAYOUT_MINOR`, `VIRTUAL_ACCOUNT_EXPIRY_MINUTES` — optional,
-     override the defaults in `config/limits.js`
+     `MAX_SINGLE_PAYOUT_MINOR`, `VIRTUAL_ACCOUNT_EXPIRY_MINUTES`,
+     `DISPUTE_EVIDENCE_WINDOW_DAYS` — optional, override the defaults in
+     `config/limits.js`
+   - `PLATFORM_FEE_BPS`, `PLATFORM_FEE_FIXED_MINOR`, `PLATFORM_FEE_CAP_MINOR`
+     — optional, override the default platform fee charged per transaction
+     in `config/fees.js`
 3. `npm run dev`
 
 ## Scripts
@@ -186,48 +190,97 @@ curl localhost:5000/api/payments/verify/<tx_ref> \
 
 ## API Endpoints
 
+All routes below live under `/api/v1` (current, use this for new integrations)
+and are also mounted unversioned at `/api` (back-compat alias only — see the
+note in `app.js`; not a permanent second contract).
+
 ### Auth
-- POST /api/auth/register
-- POST /api/auth/login
-- POST /api/auth/logout
+- POST /api/v1/auth/register
+- POST /api/v1/auth/login
+- POST /api/v1/auth/logout
+- POST /api/v1/auth/2fa/verify  (second step of login when 2FA is enabled — takes the short-lived `tempToken` from `/login`)
+- POST /api/v1/auth/2fa/setup  (requires an authenticated session)
+- POST /api/v1/auth/2fa/enable
+- POST /api/v1/auth/2fa/disable
 
 ### Merchant
-- GET   /api/merchant/me
-- PATCH /api/merchant/webhook-url
+- GET   /api/v1/merchant/me
+- PATCH /api/v1/merchant/webhook-url
+- POST  /api/v1/merchant/regenerate-key
 
 ### Customers
-- POST /api/customers
-- GET  /api/customers
+- POST /api/v1/customers
+- GET  /api/v1/customers
 
 ### Virtual Accounts
-- POST /api/virtual-accounts
-- GET  /api/virtual-accounts/:accountNumber
-- POST /api/virtual-accounts/:accountNumber/deactivate
-- GET  /api/virtual-accounts/:accountNumber/public-status  (no auth — safe for a browser-side checkout page to poll)
+- POST /api/v1/virtual-accounts
+- GET  /api/v1/virtual-accounts/:accountNumber
+- POST /api/v1/virtual-accounts/:accountNumber/deactivate
 
-### Payments (hosted checkout)
-- POST /api/payments/initialize
-- GET  /api/payments/verify/:tx_ref
+### Checkout (public — no merchant API key; the customer never holds your secret key)
+- GET /pay/:checkoutToken  (serves the hosted `pay.html` page)
+- GET /api/v1/checkout/:token/status
+- GET /api/v1/checkout/:token/complete
+
+### Payments (hosted checkout — server-to-server, requires merchant API key)
+- POST /api/v1/payments/initialize
+- GET  /api/v1/payments/verify/:tx_ref
 
 ### Wallet
-- GET /api/wallet
+- GET /api/v1/wallet
+- GET /api/v1/wallet/all
 
 ### Transactions
-- GET /api/transactions
+- GET /api/v1/transactions
 
 ### Payouts
-- POST /api/payouts
-- GET  /api/payouts
+- POST /api/v1/payouts
+- POST /api/v1/payouts/bulk
+- GET  /api/v1/payouts
+
+### Refunds
+- POST /api/v1/refunds
+- GET  /api/v1/refunds
+- GET  /api/v1/refunds/:id
+
+### Subaccounts
+- POST /api/v1/subaccounts
+- GET  /api/v1/subaccounts
+- GET  /api/v1/subaccounts/:id
+- POST /api/v1/subaccounts/:id/settle
+
+### Recipients
+- POST   /api/v1/recipients
+- GET    /api/v1/recipients
+- GET    /api/v1/recipients/:id
+- DELETE /api/v1/recipients/:id
+
+### Subscriptions
+- POST /api/v1/subscriptions/plans
+- GET  /api/v1/subscriptions/plans
+- POST /api/v1/subscriptions
+- GET  /api/v1/subscriptions
+- POST /api/v1/subscriptions/:id/cancel
+- GET  /api/v1/subscriptions/invoices
+
+### Disputes
+- GET  /api/v1/disputes  (merchant-visible: own disputes only)
+- GET  /api/v1/disputes/:id
+- POST /api/v1/disputes/:id/evidence
+- POST /api/v1/disputes  (ops-only, requires `INFRA_ADMIN_KEY` — a chargeback notice arriving from outside)
+- POST /api/v1/disputes/:id/resolve  (ops-only, requires `INFRA_ADMIN_KEY`)
 
 ### Webhooks
-- POST /api/webhooks/bank  (bank-partner-only, HMAC signature required)
+- POST /api/v1/webhooks/bank  (bank-partner-only, HMAC signature required)
 
 ### Admin (operator-only, requires `INFRA_ADMIN_KEY`)
-- GET /api/admin/provision-pool  (`?bankSlug=&count=&adminKey=`, or `x-admin-key` header)
-- GET /api/admin/pool-status  (`?adminKey=`, or `x-admin-key` header)
+- GET   /api/v1/admin/provision-pool  (`?bankSlug=&count=&adminKey=`, or `x-admin-key` header)
+- GET   /api/v1/admin/pool-status  (`?adminKey=`, or `x-admin-key` header)
+- PATCH /api/v1/admin/merchants/:id/fees  (per-merchant fee override; never merchant-settable)
 
 ### Dev-only
-- POST /api/mock-bank/simulate-transfer  (simulates a customer paying — disabled when NODE_ENV=production)
+- POST /api/v1/mock-bank/simulate-transfer  (simulates a customer paying — the guard that disables this in production is currently commented out in `app.js`; the route itself is unauthenticated by design and its own header comment says to delete/disable it before production)
+- GET  /api/v1/mock-bank/simulate-transfer/:eventId/status  (polls what happened to a simulated transfer's webhook)
 
 ## Author
 
