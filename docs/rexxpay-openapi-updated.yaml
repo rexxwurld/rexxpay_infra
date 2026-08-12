@@ -1,0 +1,851 @@
+openapi: 3.0.3
+info:
+  title: RexxPay API
+  description: >
+    RexxPay - Paystack-style payment infrastructure: merchants, customers,
+    dedicated virtual accounts, wallets, transactions, payouts, refunds,
+    subaccounts, subscriptions and disputes. Served under a versioned
+    path (/api/v1); the unversioned /api alias is kept for back-compat
+    and will eventually be removed.
+
+    Payment verification rule: never treat a browser redirect query such as
+    ?status=successful as proof that a payment succeeded. The redirect is only
+    a navigation signal. A merchant must verify the payment server-to-server
+    with GET /payments/verify/{tx_ref}, and/or process the signed merchant
+    webhook configured with PATCH /merchant/webhook-url, before fulfilling an
+    order or marking it paid. Always compare the verified amountReceived with
+    the order amount before fulfillment. Keep the merchant secret key on the
+    server and never expose it in browser JavaScript.
+
+    Webhook delivery is server-to-server. The merchant webhook URL is supplied
+    by the merchant and is not a RexxPay public API path. Merchants should
+    verify the X-RexxPay-Signature HMAC-SHA512 signature against the exact raw
+    request body, acknowledge valid events with HTTP 2xx, and make fulfillment
+    idempotent because webhook delivery may be retried.
+
+    Test the integration with the Mock Bank endpoints only in development.
+    Disable or block the mock-bank simulation routes before production.
+  version: "2.0.0"
+servers:
+  - url: /api/v1
+    description: Current API version
+  - url: /api
+    description: Deprecated alias - use /api/v1 instead
+
+tags:
+  - name: Auth
+  - name: Merchant
+  - name: Customers
+  - name: Virtual Accounts
+  - name: Checkout
+  - name: Payments
+  - name: Wallet
+  - name: Transactions
+  - name: Payouts
+  - name: Refunds
+  - name: Subaccounts
+  - name: Recipients
+  - name: Subscriptions
+  - name: Disputes
+  - name: Webhooks
+  - name: Admin
+  - name: Mock Bank
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: "sk_test_... or sk_live_..."
+      description: "Merchant secret key, sent as `Authorization: Bearer sk_test_xxx`."
+    AdminKeyAuth:
+      type: apiKey
+      in: header
+      name: x-admin-key
+      description: Operator-only key. Never given to merchants.
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        status: { type: boolean, example: false }
+        message: { type: string, example: "invalid_api_key" }
+
+    Wallet:
+      type: object
+      properties:
+        _id: { type: string }
+        merchant: { type: string }
+        balance: { type: integer, description: "Minor units (e.g. kobo)" }
+        currency: { type: string, example: NGN }
+
+    Transaction:
+      type: object
+      properties:
+        _id: { type: string }
+        reference: { type: string }
+        merchant: { type: string }
+        customer: { type: string }
+        amountReceived: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, success, partial, over, failed, flagged]
+        platformFee: { type: integer }
+        netAmount: { type: integer }
+
+    Payout:
+      type: object
+      properties:
+        _id: { type: string }
+        reference: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, processing, successful, failed]
+
+    Refund:
+      type: object
+      properties:
+        _id: { type: string }
+        reference: { type: string }
+        transaction: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, processing, successful, failed, reversed]
+
+    Plan:
+      type: object
+      properties:
+        _id: { type: string }
+        planCode: { type: string }
+        name: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        interval:
+          type: string
+          enum: [daily, weekly, monthly, yearly]
+        intervalCount: { type: integer }
+
+    Subscription:
+      type: object
+      properties:
+        _id: { type: string }
+        subscriptionCode: { type: string }
+        plan: { type: string }
+        customer: { type: string }
+        status:
+          type: string
+          enum: [active, past_due, cancelled]
+        currentPeriodStart: { type: string, format: date-time }
+        currentPeriodEnd: { type: string, format: date-time }
+
+    Invoice:
+      type: object
+      properties:
+        _id: { type: string }
+        invoiceNumber: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, paid, failed, void]
+        dueDate: { type: string, format: date-time }
+
+    Dispute:
+      type: object
+      properties:
+        _id: { type: string }
+        disputeCode: { type: string }
+        transaction: { type: string }
+        amount: { type: integer }
+        currency: { type: string }
+        reason:
+          type: string
+          enum: [fraudulent, duplicate, product_not_received, product_unacceptable, unrecognized, other]
+        status:
+          type: string
+          enum: [open, under_review, won, lost]
+        evidenceDueBy: { type: string, format: date-time }
+
+paths:
+  /payments/initialize:
+    post:
+      tags: [Payments]
+      summary: Hosted checkout — create the customer, assign a virtual account, and return a payment link
+      description: >
+        Creates a hosted checkout payment. The returned redirect URL may
+        include tx_ref and a browser status value after checkout. Browser
+        status values are not proof of payment. The merchant must verify the
+        transaction server-to-server with GET /payments/verify/{tx_ref} and/or
+        handle the signed merchant webhook before marking an order paid.
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, customer]
+              properties:
+                amount: { type: integer, description: "Minor units" }
+                customer:
+                  type: object
+                  properties:
+                    email: { type: string }
+                    name: { type: string }
+                tx_ref: { type: string, description: "Optional — supply your own reference, otherwise one is generated" }
+                redirect_url: { type: string }
+      responses:
+        "201":
+          description: Checkout link created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      tx_ref: { type: string }
+                      link: { type: string }
+
+  /payments/verify/{tx_ref}:
+    get:
+      tags: [Payments]
+      summary: Read back the transaction status for a hosted-checkout payment
+      description: >
+        Server-to-server verification endpoint. Use the merchant secret key
+        in the Authorization header. Do not use a browser query parameter
+        such as ?status=successful as payment proof. A payment may only be
+        fulfilled after this endpoint reports status=success and the merchant
+        confirms the verified amount matches the expected order amount.
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: tx_ref
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Transaction status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Transaction" }
+
+  /checkout/{token}/status:
+    get:
+      tags: [Checkout]
+      summary: Public, unauthenticated poll of a hosted-checkout session's status (used by pay.html)
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Checkout session status
+
+  /checkout/{token}/complete:
+    get:
+      tags: [Checkout]
+      summary: Public, unauthenticated — marks/reads completion of a hosted-checkout session
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Checkout completion result
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new merchant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [businessName, email, password]
+              properties:
+                businessName: { type: string }
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "201":
+          description: Merchant created, includes secretKey
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Merchant login (dashboard session)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Session token, or a tempToken if 2FA is enabled
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: End the merchant's dashboard session
+      responses:
+        "200": { description: Logged out }
+
+  /auth/2fa/verify:
+    post:
+      tags: [Auth]
+      summary: Second step of login when 2FA is enabled — exchanges tempToken for a full session
+      responses:
+        "200": { description: Session token }
+
+  /merchant/me:
+    get:
+      tags: [Merchant]
+      summary: Get the authenticated merchant's profile
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200": { description: Merchant profile }
+
+  /merchant/webhook-url:
+    patch:
+      tags: [Merchant]
+      summary: Set the URL RexxPay should POST webhook notifications to
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200": { description: Updated }
+
+  /merchant/regenerate-key:
+    post:
+      tags: [Merchant]
+      summary: Rotate the merchant's API secret key
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200": { description: New key issued }
+
+  /customers:
+    post:
+      tags: [Customers]
+      summary: Create a customer
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "201": { description: Customer created }
+    get:
+      tags: [Customers]
+      summary: List the merchant's customers
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200": { description: Customers }
+
+  /virtual-accounts:
+    post:
+      tags: [Virtual Accounts]
+      summary: Assign a pooled virtual account to a customer
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "201": { description: Account assigned }
+
+  /virtual-accounts/{accountNumber}:
+    get:
+      tags: [Virtual Accounts]
+      summary: Fetch a virtual account
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: accountNumber
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Account }
+
+  /virtual-accounts/{accountNumber}/deactivate:
+    post:
+      tags: [Virtual Accounts]
+      summary: Deactivate a virtual account, releasing it back to the pool
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: accountNumber
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Deactivated }
+
+  /admin/provision-pool:
+    get:
+      tags: [Admin]
+      summary: Provision pooled accounts from a bank partner (operator-only)
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: bankSlug
+          schema: { type: string, default: rexxpay-bank }
+        - in: query
+          name: count
+          schema: { type: integer, default: 20, maximum: 500 }
+      responses:
+        "200": { description: Provisioned }
+
+  /admin/pool-status:
+    get:
+      tags: [Admin]
+      summary: Check pool health across bank partners (operator-only)
+      security: [{ AdminKeyAuth: [] }]
+      responses:
+        "200": { description: Pool status by bank }
+
+  /mock-bank/simulate-transfer:
+    post:
+      tags: [Mock Bank]
+      summary: >
+        Dev-only — simulates a customer's bank transfer by firing a signed
+        webhook to this server's own /webhooks/bank endpoint. Unauthenticated
+        by design. Must be disabled before production; the guard for that is
+        currently commented out in app.js.
+      responses:
+        "200": { description: Simulated transfer queued }
+
+  /mock-bank/simulate-transfer/{eventId}/status:
+    get:
+      tags: [Mock Bank]
+      summary: Dev-only — poll what happened to a simulated transfer's webhook
+      parameters:
+        - in: path
+          name: eventId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Event/transaction status }
+
+  /wallet:
+    get:
+      tags: [Wallet]
+      summary: Get a wallet by currency (defaults to NGN)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: currency
+          schema: { type: string, example: NGN }
+      responses:
+        "200":
+          description: Wallet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Wallet" }
+
+  /wallet/all:
+    get:
+      tags: [Wallet]
+      summary: List every currency wallet the merchant holds
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Wallets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Wallet" }
+
+  /transactions:
+    get:
+      tags: [Transactions]
+      summary: List transactions for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Transactions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Transaction" }
+
+  /payouts:
+    post:
+      tags: [Payouts]
+      summary: Request a payout to a bank account
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, destinationBankCode, destinationAccountNumber, destinationAccountName]
+              properties:
+                amount: { type: integer, description: "Minor units" }
+                currency: { type: string, example: NGN }
+                recipientCode: { type: string }
+                destinationBankCode: { type: string }
+                destinationAccountNumber: { type: string }
+                destinationAccountName: { type: string }
+      responses:
+        "201":
+          description: Payout created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Payout" }
+        "400":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    get:
+      tags: [Payouts]
+      summary: List payouts
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Payouts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Payout" }
+
+  /payouts/bulk:
+    post:
+      tags: [Payouts]
+      summary: Request up to 100 payouts in one call
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                currency: { type: string, example: NGN }
+                items:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: object
+                    properties:
+                      amount: { type: integer }
+                      recipientCode: { type: string }
+      responses:
+        "201":
+          description: Bulk payout accepted
+
+  /refunds:
+    post:
+      tags: [Refunds]
+      summary: Refund a transaction (fully or partially)
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transactionId, destinationBankCode, destinationAccountNumber, destinationAccountName]
+              properties:
+                transactionId: { type: string }
+                amount: { type: integer, description: "Omit to refund the full refundable amount" }
+                reason: { type: string }
+                destinationBankCode: { type: string }
+                destinationAccountNumber: { type: string }
+                destinationAccountName: { type: string }
+      responses:
+        "201":
+          description: Refund created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Refund" }
+    get:
+      tags: [Refunds]
+      summary: List refunds
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Refunds
+
+  /subscriptions/plans:
+    post:
+      tags: [Subscriptions]
+      summary: Create a billing plan
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, amount, interval]
+              properties:
+                name: { type: string }
+                amount: { type: integer }
+                currency: { type: string, example: NGN }
+                interval: { type: string, enum: [daily, weekly, monthly, yearly] }
+                intervalCount: { type: integer, default: 1 }
+      responses:
+        "201":
+          description: Plan created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Plan" }
+    get:
+      tags: [Subscriptions]
+      summary: List plans
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Plans
+
+  /subscriptions:
+    post:
+      tags: [Subscriptions]
+      summary: Subscribe a customer to a plan
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerId, planCode]
+              properties:
+                customerId: { type: string }
+                planCode: { type: string }
+      responses:
+        "201":
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Subscription" }
+    get:
+      tags: [Subscriptions]
+      summary: List subscriptions
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Subscriptions
+
+  /subscriptions/{id}/cancel:
+    post:
+      tags: [Subscriptions]
+      summary: Cancel a subscription
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Cancelled subscription
+
+  /subscriptions/invoices:
+    get:
+      tags: [Subscriptions]
+      summary: List invoices
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: subscriptionId
+          schema: { type: string }
+      responses:
+        "200":
+          description: Invoices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Invoice" }
+
+  /disputes:
+    get:
+      tags: [Disputes]
+      summary: List disputes for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Disputes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Dispute" }
+    post:
+      tags: [Disputes]
+      summary: "Open a dispute (ops-only - represents a chargeback notice from a bank)"
+      security: [{ AdminKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [merchantId, transactionId]
+              properties:
+                merchantId: { type: string }
+                transactionId: { type: string }
+                amount: { type: integer }
+                reason:
+                  type: string
+                  enum: [fraudulent, duplicate, product_not_received, product_unacceptable, unrecognized, other]
+                reasonDetail: { type: string }
+      responses:
+        "201":
+          description: Dispute opened
+
+  /disputes/{id}/evidence:
+    post:
+      tags: [Disputes]
+      summary: Submit evidence on an open dispute
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [description]
+              properties:
+                description: { type: string }
+                url: { type: string }
+      responses:
+        "200":
+          description: Evidence recorded
+
+  /disputes/{id}/resolve:
+    post:
+      tags: [Disputes]
+      summary: Resolve a dispute (ops-only)
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [outcome]
+              properties:
+                outcome: { type: string, enum: [won, lost] }
+                resolution: { type: string }
+      responses:
+        "200":
+          description: Dispute resolved
+
+  /admin/merchants/{id}/fees:
+    patch:
+      tags: [Merchant]
+      summary: "Set a per-merchant platform fee override (ops-only)"
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                percentageBps: { type: integer, description: "Basis points, e.g. 150 = 1.5%" }
+                fixedMinor: { type: integer }
+                capMinor: { type: integer }
+      responses:
+        "200":
+          description: Updated merchant fee config
+
+  # Merchant webhook contract:
+  # The URL is owned by the merchant and registered with PATCH /merchant/webhook-url.
+  # RexxPay POSTs an envelope shaped like:
+  # {
+  #   "event": "transaction.success",
+  #   "data": {
+  #     "tx_ref": "merchant-reference",
+  #     "status": "success",
+  #     "amountReceived": 6800000,
+  #     "currency": "NGN"
+  #   },
+  #   "sentAt": "2026-08-12T00:00:00.000Z"
+  # }
+  # Security: X-RexxPay-Signature = HMAC-SHA512(raw_request_body, webhook_secret).
+  # Verify the signature against the exact raw request body before processing.
+  # Fulfillment must be idempotent; duplicate webhook deliveries must not
+  # double-charge, double-credit, decrement stock twice, or increment coupons twice.
+  # Acknowledge valid events with HTTP 2xx. Never expose API or webhook secrets
+  # to browser/client-side code.
+
+  /webhooks/bank:
+    post:
+      tags: [Webhooks]
+      summary: Bank partner inbound-payment notification (not merchant-callable, HMAC-signature required)
+      responses:
+        "200":
+          description: Accepted for async processing
