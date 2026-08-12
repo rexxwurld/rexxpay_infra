@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "provision-bank-pool": "node scripts/provision-rexxpay-bank-pool.js",
+    "auto-provision-pool": "node scripts/auto-provision-pool.js",
     "release-stale-accounts": "node scripts/release-stale-accounts.js",
     "reconcile": "node scripts/reconcile.js",
     "generate-invoices": "node scripts/generate-invoices.js"
