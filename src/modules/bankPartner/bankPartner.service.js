@@ -5,16 +5,13 @@ const VirtualAccount = require('../virtualAccount/virtualAccount.model');
 const generateAccountNumber = require('../../utils/generateAccountNumber');
 const { rexxPayBankBaseUrl, rexxPayBankAdminKey } = require('../../config/env');
 
-// Seeds the default partner banks if they don't already exist.
+// Seeds the default partner bank if it doesn't already exist.
 // 'rexxpay-bank' is the REAL bank (rexxpay.onrender.com) - accounts under
 // it are real wallets that can actually receive transfers and fire
-// webhooks. 'wema-bank' / 'titan-trust-bank' stay as local mock/demo
-// partners for offline testing without hitting the real bank.
+// webhooks. This is now the ONLY bank partner - single-bank setup.
 async function ensureDefaultBankPartners() {
   const defaults = [
     { name: 'RexxPay Bank', slug: 'rexxpay-bank' },
-    { name: 'Wema Bank', slug: 'wema-bank' },
-    { name: 'Titan Trust Bank', slug: 'titan-trust-bank' },
   ];
   for (const bank of defaults) {
     await BankPartner.findOneAndUpdate({ slug: bank.slug }, bank, { upsert: true });
