@@ -172,7 +172,13 @@ async function processEvent(eventId) {
     |--------------------------------------------------------------------------
     */
 
-    if (!duplicate && transaction.status !== 'flagged') {
+    if (
+  !duplicate &&
+  (
+    transaction.status === 'success' ||
+    transaction.status === 'over'
+  )
+) {
       /*
       |--------------------------------------------------------------------------
       | DEACTIVATE ACCOUNT
