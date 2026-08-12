@@ -2,17 +2,14 @@
 const app = require('./app');
 const connectDB = require('./config/db');
 const { port } = require('./config/env');
-const { ensureDefaultBankPartners, provisionAccountPool } = require('./modules/bankPartner/bankPartner.service');
+const { ensureDefaultBankPartners } = require('./modules/bankPartner/bankPartner.service');
 const { redriveStuckEvents } = require('./modules/webhook/webhook.processor');
 
 async function start() {
   await connectDB();
 
-  // Make sure the mock bank partners exist and have some accounts ready
-  // in the pool, so /virtual-accounts assignment works out of the box.
+  // Make sure the single bank partner (RexxPay Bank) exists.
   await ensureDefaultBankPartners();
-  await provisionAccountPool('wema-bank', 20);
-  await provisionAccountPool('titan-trust-bank', 20);
 
   // NOTE: 'rexxpay-bank' (the REAL bank) is deliberately NOT
   // auto-provisioned here. Provisioning it calls the real RexxPay Bank
