@@ -144,7 +144,7 @@ async function assignVirtualAccount({
   */
 
   if (!account) {
-    const bankSlug = preferredBankSlug || 'wema-bank';
+    const bankSlug = preferredBankSlug || 'rexxpay-bank';
 
     await provisionAccountPool(bankSlug, 20);
 
