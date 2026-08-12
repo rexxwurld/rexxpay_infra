@@ -45,6 +45,69 @@ async function provisionAccountPool(bankSlug, count = 20) {
   return bank;
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// RexxPay Bank is a Render free-tier instance: it spins down when idle
+// and can take 30-60s to cold-start, returning 502s (or just hanging)
+// on the request that wakes it up. It can also 429 if we hit it with a
+// burst of requests back-to-back. Both are transient - retry with
+// backoff rather than failing the whole pool top-up on the first blip.
+const RETRYABLE_STATUS = new Set([429, 502, 503, 504]);
+const MAX_ATTEMPTS = 5;
+const BASE_DELAY_MS = 2000;
+// Between successive accounts, not just retries, to avoid tripping the
+// bank's rate limiter in the first place.
+const DELAY_BETWEEN_REQUESTS_MS = 300;
+
+async function createPoolAccountWithRetry(label) {
+  let lastErr;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const response = await axios.post(
+        `${rexxPayBankBaseUrl}/api/v1/admin/pool-accounts`,
+        { label },
+        {
+          headers: {
+            'x-admin-key': rexxPayBankAdminKey,
+            'Content-Type': 'application/json',
+          },
+          // Generous enough to survive a Render cold start.
+          timeout: 45000,
+        }
+      );
+
+      return response.data.data;
+    } catch (err) {
+      lastErr = err;
+      const status = err.response?.status;
+      const isRetryable = RETRYABLE_STATUS.has(status) || err.code === 'ECONNABORTED';
+
+      if (!isRetryable || attempt === MAX_ATTEMPTS) {
+        break;
+      }
+
+      // Respect Retry-After if the bank sends one (common on 429s),
+      // otherwise exponential backoff with a little jitter.
+      const retryAfterHeader = Number(err.response?.headers?.['retry-after']);
+      const backoff = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+        ? retryAfterHeader * 1000
+        : BASE_DELAY_MS * 2 ** (attempt - 1) + Math.random() * 500;
+
+      await sleep(backoff);
+    }
+  }
+
+  const message = lastErr.response?.data?.message || lastErr.message;
+  const status = lastErr.response?.status;
+  const err = new Error(
+    `Failed to provision real account from RexxPay Bank after ${MAX_ATTEMPTS} attempts` +
+      `${status ? ` (last status ${status})` : ''}: ${message}`
+  );
+  err.cause = lastErr;
+  throw err;
+}
+
 async function provisionRealAccountsFromBank(bank, count) {
   if (!rexxPayBankAdminKey) {
     throw new Error(
@@ -53,22 +116,13 @@ async function provisionRealAccountsFromBank(bank, count) {
   }
 
   const created = [];
+  const errors = [];
 
   for (let i = 0; i < count; i++) {
     try {
-      const response = await axios.post(
-        `${rexxPayBankBaseUrl}/api/v1/admin/pool-accounts`,
-        { label: `RexxPay Infra pool account #${i + 1}` },
-        {
-          headers: {
-            'x-admin-key': rexxPayBankAdminKey,
-            'Content-Type': 'application/json',
-          },
-          timeout: 15000,
-        }
+      const { accountNumber } = await createPoolAccountWithRetry(
+        `RexxPay Infra pool account #${i + 1}`
       );
-
-      const { accountNumber } = response.data.data;
 
       created.push({
         accountNumber,
@@ -76,15 +130,32 @@ async function provisionRealAccountsFromBank(bank, count) {
         status: 'available',
       });
     } catch (err) {
-      // Stop on first failure rather than silently provisioning a partial,
-      // possibly-broken pool - surface the real error to whoever called this.
-      const message = err.response?.data?.message || err.message;
-      throw new Error(`Failed to provision real account from RexxPay Bank: ${message}`);
+      // Don't let one persistently-failing account (after retries) wipe
+      // out the accounts we already successfully provisioned this pass.
+      errors.push(err.message);
+      break;
+    }
+
+    if (i < count - 1) {
+      await sleep(DELAY_BETWEEN_REQUESTS_MS);
     }
   }
 
   if (created.length) {
     await VirtualAccount.insertMany(created, { ordered: false }).catch(() => {});
+  }
+
+  if (errors.length && created.length === 0) {
+    // Nothing got through at all - surface the real error.
+    throw new Error(errors[0]);
+  }
+
+  if (errors.length) {
+    // Partial success - log but don't blow up the whole request, since
+    // some accounts did make it into the pool.
+    console.error(
+      `[provisionRealAccountsFromBank] provisioned ${created.length}/${count} before failing: ${errors[0]}`
+    );
   }
 
   return bank;
