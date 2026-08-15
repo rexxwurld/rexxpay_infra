@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const VirtualAccount = require('./virtualAccount.model');
 const BankPartner = require('../bankPartner/bankPartner.model');
 const Customer = require('../customer/customer.model');
-const { provisionAccountPool } = require('../bankPartner/bankPartner.service');
+const { provisionAccountPool, assignBankPoolAccount, deactivateBankPoolAccount, releaseBankPoolAccount } = require('../bankPartner/bankPartner.service');
 const { findActiveByCodeForMerchant } = require('../subaccount/subaccount.service');
 
 /*
@@ -173,6 +173,20 @@ async function assignVirtualAccount({
   customer.virtualAccount = account._id;
   await customer.save();
 
+  /*
+  |--------------------------------------------------------------------------
+  | TELL THE REAL BANK THIS ACCOUNT IS NOW ASSIGNED
+  |--------------------------------------------------------------------------
+  |
+  | Without this, RexxPay Bank's own wallet.status stays "available"
+  | forever, and any deposit landing on it gets rejected with
+  | "wallet_not_currently_assigned" even though SwiftPay thinks it's
+  | correctly assigned.
+  |
+  */
+
+  await assignBankPoolAccount(account.accountNumber);
+
   return {
     account,
     checkoutToken,
@@ -266,6 +280,19 @@ async function releaseVirtualAccount(accountId) {
 
   /*
   |--------------------------------------------------------------------------
+  | TELL THE REAL BANK THIS ACCOUNT IS NOW IN COOLDOWN
+  |--------------------------------------------------------------------------
+  |
+  | Not "assigned" (checkout is over) and not "available" (still cooling
+  | down) - deactivate makes that honest on the bank's side too, while
+  | still rejecting any deposit that lands here before reactivation.
+  |
+  */
+
+  await deactivateBankPoolAccount(account.accountNumber);
+
+  /*
+  |--------------------------------------------------------------------------
   | IMPORTANT
   |--------------------------------------------------------------------------
   |
@@ -340,6 +367,11 @@ async function releaseStaleAssignedAccounts(maxAgeMinutes) {
       }
     );
 
+    // These go straight back to "available" without a cooldown, so tell
+    // the bank now - unlike releaseVirtualAccount's cooldown path, there's
+    // no reactivateExpiredAccounts step coming later to do it instead.
+    await releaseBankPoolAccount(account.accountNumber);
+
     released += 1;
   }
 
@@ -403,6 +435,13 @@ async function reactivateExpiredAccounts() {
     account.splitPercentage = null;
 
     await account.save();
+
+    // Cooldown just ended and the account is back in the available pool -
+    // tell the bank now. (During the cooldown itself, the bank is
+    // deliberately left showing "assigned" so a late/stray deposit still
+    // gets rejected rather than silently credited - see
+    // deposit.service.js on the bank side.)
+    await releaseBankPoolAccount(account.accountNumber);
 
     reactivated += 1;
   }
