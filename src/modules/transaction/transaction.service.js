@@ -6,7 +6,7 @@ const Transaction = require('./transaction.model');
 const Customer = require('../customer/customer.model');
 const VirtualAccount = require('../virtualAccount/virtualAccount.model');
 
-const { creditWallet } = require('../wallet/wallet.service');
+const { creditPendingSettlement } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 
 const { screenName } = require('../../utils/sanctionsCheck');
@@ -25,6 +25,14 @@ const limits = require('../../config/limits');
 //
 // Never expose this as a public API a client could call directly
 // to fake a payment.
+//
+// IMPORTANT: "credited" here means credited to pendingSettlementBalance,
+// NOT the merchant's available/payable balance. Money only becomes
+// payable once settlement.service moves it across after the settlement
+// cutoff - see modules/settlement/settlement.service.js. Before this
+// change this function called creditWallet() directly, which put
+// inbound money straight into the spendable balance with no settlement
+// delay at all.
 
 async function recordIncomingPayment({
   reference,
@@ -282,6 +290,25 @@ async function recordIncomingPayment({
 
   /*
   |--------------------------------------------------------------------------
+  | SETTLEMENT ELIGIBILITY
+  |--------------------------------------------------------------------------
+  |
+  | Only transactions that actually credit the merchant get a settlement
+  | lifecycle at all. A flagged/failed transaction, or a fully-split
+  | payment that leaves netAmount at 0, never puts money in the
+  | merchant's pendingSettlementBalance, so there's nothing for
+  | settlement.service to move later.
+  |
+  */
+
+  const willCreditMerchant =
+    status !== 'flagged' &&
+    status !== 'failed' &&
+    netAmount > 0;
+
+
+  /*
+  |--------------------------------------------------------------------------
   | ATOMIC TRANSACTION
   |--------------------------------------------------------------------------
   */
@@ -336,6 +363,11 @@ async function recordIncomingPayment({
             platformFee,
 
             netAmount,
+
+            settlementStatus:
+              willCreditMerchant
+                ? 'pending_settlement'
+                : null,
           },
         ],
         {
@@ -373,7 +405,7 @@ async function recordIncomingPayment({
 
         if (netAmount > 0) {
 
-          await creditWallet(
+          await creditPendingSettlement(
             merchantId,
             netAmount,
             session,
@@ -415,7 +447,7 @@ async function recordIncomingPayment({
                 merchantId.toString(),
 
               description:
-                'Wallet credited for inbound payment (net of split and platform fee)',
+                'Wallet credited for inbound payment (net of split and platform fee) - pending settlement',
             },
 
             session,
@@ -536,7 +568,7 @@ async function recordIncomingPayment({
 
         if (netAmount > 0) {
 
-          await creditWallet(
+          await creditPendingSettlement(
             merchantId,
             netAmount,
             session,
@@ -578,7 +610,7 @@ async function recordIncomingPayment({
                 merchantId.toString(),
 
               description:
-                'Wallet credited for inbound payment (net of platform fee)',
+                'Wallet credited for inbound payment (net of platform fee) - pending settlement',
             },
 
             session,
