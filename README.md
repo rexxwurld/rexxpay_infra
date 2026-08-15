@@ -14,7 +14,7 @@ wallet credits when customers pay via bank transfer.
 ## Architecture
 
 ```
-Merchant  --(secret key)-->  RexxPay API  --(pool assignment)-->  Bank Partner
+Merchant  --(secret key)-->  SwiftPay API  --(pool assignment)-->  Bank Partner
                                    ^                                     |
                                    |                                     v
                           verified webhook  <----------------  customer transfers money
@@ -83,6 +83,12 @@ must go.
 | `utils/sanctionsCheck.js` | **Stub only** — shows where real AML/sanctions screening (OFAC/UN/NFIU lists via a licensed provider) must run, with a dev-only denylist for testing the flagging path. |
 | `scripts/reconcile.js` | Compares our transaction records against a bank settlement export (JSON) and reports mismatches in both directions — money we think we have that the bank doesn't confirm, and money the bank settled that we never recorded. |
 | Idempotency | `Transaction.reference` and `Payout.reference` both have unique DB indexes, so even a race between two concurrent webhook deliveries fails safely at the database level, not just in application logic. |
+| `settlement` | Moves a successful transaction through `pending_settlement → settled → available` on a schedule (`scripts/run-settlement.js`), recording one `SettlementBatch` per cycle per phase so any transaction's settlement history is traceable, not just an invisible cron side effect. |
+| `refund` | Full or partial refunds against a settled transaction; posts the reversing ledger entries and drives its own `pending → processing → successful/failed/reversed` status. |
+| `subaccount` | Paystack-style split payments — routes a percentage of an incoming payment to a sub-merchant's ledger balance (no login/wallet of its own) at checkout time, and lets the parent merchant settle that balance out to the subaccount's bank account on demand. |
+| `recipient` | Saved payout destinations (`rcp_xxxxx`) a merchant can reuse across `payout`/`payout/bulk` calls instead of re-typing bank details each time. |
+| `subscription` | Recurring billing: merchants define `Plan`s, customers `Subscription` to them, and `scripts/generate-invoices.js` sweeps due subscriptions to create `Invoice`s (each with its own pay-in virtual account) on a schedule. |
+| `dispute` | Chargeback handling — ops opens a dispute against a transaction (freezing the disputed amount), the merchant submits evidence within `DISPUTE_EVIDENCE_WINDOW_DAYS`, and ops resolves it `won`/`lost`. |
 
 ## Still not real (and why it's hard)
 
@@ -108,7 +114,9 @@ must go.
 | `index.html` | Marketing/landing page |
 | `onboarding.html` | Merchant register/login (`?tab=login` or `?tab=register`) |
 | `dashboard.html` | Logged-in merchant dashboard — wallet balance, transactions, API keys |
-| `pay.html` | Customer-facing checkout page rendered by the `payment.initialize` link; polls `GET /api/virtual-accounts/:accountNumber/public-status` |
+| `pay.html` | Customer-facing checkout page rendered by the `payment.initialize` link; polls `GET /api/v1/checkout/:token/status` |
+| `admin.html` | Operator dashboard (pool status + manual provisioning), served at `/admin`; authenticates client-side against the `INFRA_ADMIN_KEY`-protected `/api/v1/admin/*` routes |
+| `simulate-transfer.html` | Dev-only page for firing `/api/v1/mock-bank/simulate-transfer` and polling its status without curl |
 
 ## Getting Started
 
@@ -119,6 +127,10 @@ must go.
    - `REXXPAY_BANK_BASE_URL`, `REXXPAY_BANK_ADMIN_KEY` — only needed if
      provisioning real accounts from an external RexxPay Bank instance rather
      than using the local mock bank
+   - `REXXPAY_BANK_PAYOUT_SECRET` — signs outgoing payout instructions to
+     RexxPay Bank; defaults to `BANK_WEBHOOK_SECRET` if unset
+   - `LINKED_SERVICE_NAME` — how this service identifies itself in payout
+     instructions; must match the `linkedService` value on the RexxPay Bank side
    - `INFRA_ADMIN_KEY` — required to call the `/api/admin` routes
    - `SANCTIONS_DENYLIST_DEV` — optional, comma-separated names to exercise
      the flagging path locally (see `utils/sanctionsCheck.js`)
@@ -133,6 +145,11 @@ must go.
    - `PLATFORM_FEE_BPS`, `PLATFORM_FEE_FIXED_MINOR`, `PLATFORM_FEE_CAP_MINOR`
      — optional, override the default platform fee charged per transaction
      in `config/fees.js`
+   - `SETTLEMENT_CUTOFF_MINUTES`, `SETTLEMENT_AVAILABILITY_DELAY_MINUTES`,
+     `SETTLEMENT_BATCH_SIZE` — optional, control how long a confirmed
+     payment sits before it's eligible to settle, the extra hold before
+     it's payable, and the max transactions processed per batch (see
+     `npm run run-settlement`)
 3. `npm run dev`
 
 ## Scripts
@@ -148,6 +165,7 @@ way the server does):
 | `npm run reactivate-expired-accounts` | Companion to the release job — moves `deactivated` accounts whose `cooldownUntil` has passed back to `available` so they can be reassigned. |
 | `npm run generate-invoices` | Sweeps subscriptions with a due `nextBillingDate`, creates the `Invoice` + a virtual account for the customer to pay it into. Intended to run on a cron. |
 | `npm run reconcile -- path/to/settlement-file.json` | Compares local `Transaction` records against a bank settlement export and reports mismatches in both directions. |
+| `npm run run-settlement` | Runs one settlement cycle now: moves eligible transactions `pending_settlement → settled → available` and writes a `SettlementBatch` record for each phase. Intended to run on a cron; can also be triggered ad hoc via `POST /api/v1/admin/settlement/run`. |
 
 `webhook.processor.js` also self-heals on server startup: any webhook event
 left mid-processing after a crash is picked up by `redriveStuckEvents()`
@@ -283,6 +301,8 @@ note in `app.js`; not a permanent second contract).
 - GET   /api/v1/admin/provision-pool  (`?bankSlug=&count=&adminKey=`, or `x-admin-key` header)
 - GET   /api/v1/admin/pool-status  (`?adminKey=`, or `x-admin-key` header)
 - PATCH /api/v1/admin/merchants/:id/fees  (per-merchant fee override; never merchant-settable)
+- POST  /api/v1/admin/settlement/run  (`?currency=`, forces a settlement cycle now — the scheduled trigger is `npm run run-settlement`)
+- GET   /api/v1/admin/settlement/batches  (`?currency=&phase=&limit=`, inspect recent settlement batches)
 
 ### Dev-only
 - POST /api/v1/mock-bank/simulate-transfer  (simulates a customer paying — the guard that disables this in production is currently commented out in `app.js`; the route itself is unauthenticated by design and its own header comment says to delete/disable it before production)
