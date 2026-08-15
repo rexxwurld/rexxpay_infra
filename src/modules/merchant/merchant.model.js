@@ -6,6 +6,11 @@ const merchantSchema = new mongoose.Schema(
     businessName: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     passwordHash: { type: String, required: true },
+
+    // Self-reported at signup; does not itself gate features or fees -
+    // that's still controlled by the `fees` override below and any
+    // future plan-enforcement logic.
+    plan: { type: String, enum: ['starter', 'growth', 'enterprise'], default: 'starter' },
     webhookUrl: { type: String },
     webhookSecret: { type: String },
 
