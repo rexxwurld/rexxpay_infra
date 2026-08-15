@@ -2,31 +2,29 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const Payout = require('./payout.model');
-const { debitWallet, creditWallet } = require('../wallet/wallet.service');
+const { reserveFunds, finalizeReservedDebit, releaseReservedFunds, getOrCreateWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 const { findActiveByCodeForMerchant } = require('../recipient/recipient.service');
+const { sendPayoutInstruction } = require('../bankPartner/rexxPayBankClient');
 const auditLog = require('../audit/auditLog.service');
 const limits = require('../../config/limits');
 
 const MAX_BULK_PAYOUT_ITEMS = 100;
 
-// NOTE: `sendToRealBank` is a stub. Wiring this to a real disbursement
-// provider (Paystack Transfers, Flutterwave, a direct NIBSS NIP outbound
-// integration, or your BaaS partner's payout API) is the single biggest
-// piece of "real world" plumbing this repo is still missing - everything
-// upstream of this line (limits, ledger, atomicity, idempotency) is real.
-async function sendToRealBank(payout) {
-  // Simulated success. A real implementation calls the provider here and
-  // returns { success, providerRef } based on their actual response -
-  // and must handle "pending"/"processing" responses, not just
-  // success/fail, since real disbursement is rarely synchronous.
-  return { success: true, providerRef: `sim_${payout.reference}` };
+// RexxPay Bank wallets are denominated in major units (naira); SwiftPay
+// tracks everything internally in minor units (kobo). This is the one
+// place that conversion needs to happen, symmetric to how
+// rexxpay-main's deposit.service.js does `Math.round(amount * 100)` when
+// notifying SwiftPay of a deposit in the other direction.
+function toMajorUnits(amountMinorUnits) {
+  return amountMinorUnits / 100;
 }
 
 async function requestPayout({
   merchantId,
   amount,
   currency = 'NGN',
+  idempotencyKey = null,
   recipientCode,
   destinationBankCode,
   destinationAccountNumber,
@@ -37,6 +35,20 @@ async function requestPayout({
   }
   if (amount > limits.MAX_SINGLE_PAYOUT_MINOR) {
     throw new Error('payout_exceeds_max_single_payout_limit');
+  }
+
+  // IDEMPOTENCY - if the caller supplied a key and we've already seen
+  // it for this merchant, return the existing payout instead of
+  // reserving/sending money a second time. This is the check the
+  // original version of this function didn't have at all - every call
+  // generated a fresh internal reference regardless of whether it was
+  // really a brand new payout or a client retrying a request whose
+  // response it never received.
+  if (idempotencyKey) {
+    const existing = await Payout.findOne({ merchant: merchantId, idempotencyKey });
+    if (existing) {
+      return existing;
+    }
   }
 
   // A saved recipient takes precedence over raw destination fields if
@@ -60,22 +72,27 @@ async function requestPayout({
   try {
     session.startTransaction();
 
-    // Debit first, inside the same transaction as the Payout record and
-    // the ledger entries - if any step fails, the whole thing rolls back
-    // and the merchant's wallet is never left silently debited.
-    await debitWallet(merchantId, amount, session, currency);
+    // Reserve first, inside the same transaction as the Payout record
+    // and the ledger entries - if any step fails, the whole thing rolls
+    // back and the merchant's wallet is never left silently debited.
+    // Reserving (rather than debiting `balance` straight to zero) means
+    // the money is provably committed to THIS payout without yet
+    // claiming it definitely left - see finalizeReservedDebit /
+    // releaseReservedFunds below for how the reservation resolves.
+    const wallet = await reserveFunds(merchantId, amount, session, currency);
 
     const [created] = await Payout.create(
       [
         {
           merchant: merchantId,
           reference,
+          idempotencyKey,
           amount,
           currency,
           destinationBankCode,
           destinationAccountNumber,
           destinationAccountName,
-          status: 'processing',
+          status: 'reserved',
         },
       ],
       { session, ordered: true }
@@ -88,7 +105,7 @@ async function requestPayout({
       currency,
       sourceType: 'payout',
       sourceRef: payout._id.toString(),
-      debit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Payout requested' },
+      debit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Payout requested - funds reserved' },
       credit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Funds moved to payout clearing pending bank confirmation' },
       session,
     });
@@ -98,6 +115,11 @@ async function requestPayout({
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
+
+    if (err.code === 11000 && idempotencyKey) {
+      const raced = await Payout.findOne({ merchant: merchantId, idempotencyKey });
+      if (raced) return raced;
+    }
     throw err;
   }
 
@@ -110,37 +132,95 @@ async function requestPayout({
     metadata: { amount, destinationAccountNumber },
   });
 
-  // Disbursement call happens AFTER the DB transaction commits - never
-  // call an external payment provider from inside a DB transaction, or a
+  // Bank call happens AFTER the DB transaction commits - never call an
+  // external payment provider from inside a DB transaction, or a
   // slow/failed external call can hold locks and block unrelated writes.
-  try {
-    const result = await sendToRealBank(payout);
-    payout.status = result.success ? 'successful' : 'failed';
-    payout.providerRef = result.providerRef || null;
-    if (!result.success) payout.failureReason = result.reason || 'provider_declined';
-    await payout.save();
+  payout.status = 'processing';
+  await payout.save();
 
-    if (!result.success) {
-      // Reverse the debit - money never actually left, so give it back.
-      await reversePayout(payout);
+  try {
+    const result = await sendPayoutInstruction({
+      idempotencyKey: payout.reference, // what RexxPay Bank dedupes on
+      amountMajorUnits: toMajorUnits(amount),
+      destinationAccountNumber,
+      destinationBank: destinationBankCode,
+      destinationAccountName,
+    });
+
+    if (result.success) {
+      await finalizePayoutSuccess(payout, result.payout?.providerReference || null);
+    } else {
+      // A well-formed "the bank declined/failed this payout" response -
+      // the reservation genuinely never left, safe to release.
+      await reversePayout(payout, result.payout?.failureReason || 'bank_declined');
     }
   } catch (err) {
-    // Provider call itself failed (timeout, 5xx, etc.) - status stays
-    // 'processing'. A reconciliation job should later query the provider
-    // for the real outcome rather than assuming failure and refunding
-    // money that may actually have gone out.
-    payout.failureReason = `provider_call_error: ${err.message}`;
-    await payout.save();
+    if (err.ambiguousOutcome) {
+      // We don't know if RexxPay Bank actually processed this before
+      // the connection died. DO NOT release the reservation and DO NOT
+      // mark it successful - leave it reserved/ambiguous for a
+      // reconciliation job to resolve against RexxPay Bank's own
+      // records (RexxPay's idempotencyKey dedup means safely re-sending
+      // the same instruction later is fine even if it did go through).
+      payout.status = 'ambiguous';
+      payout.failureReason = `bank_call_ambiguous: ${err.message}`;
+      await payout.save();
+
+      await auditLog.record({
+        actorType: 'system',
+        actorRef: 'payout_service',
+        action: 'payout.ambiguous_outcome',
+        entityType: 'Payout',
+        entityRef: payout._id.toString(),
+        severity: 'critical',
+        metadata: { error: err.message },
+      });
+    } else {
+      await reversePayout(payout, err.message);
+    }
   }
 
   return payout;
 }
 
-async function reversePayout(payout) {
+async function finalizePayoutSuccess(payout, providerReference) {
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
-    await creditWallet(payout.merchant, payout.amount, session, payout.currency);
+
+    const wallet = await getOrCreateWallet(payout.merchant, payout.currency, session);
+    await finalizeReservedDebit(wallet._id, payout.amount, session);
+
+    payout.status = 'successful';
+    payout.providerRef = providerReference;
+    await payout.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    await auditLog.record({
+      actorType: 'system',
+      actorRef: 'payout_service',
+      action: 'payout.successful',
+      entityType: 'Payout',
+      entityRef: payout._id.toString(),
+      metadata: { amount: payout.amount, providerReference },
+    });
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
+  }
+}
+
+async function reversePayout(payout, reason) {
+  const session = await mongoose.startSession();
+  try {
+    session.startTransaction();
+
+    const wallet = await getOrCreateWallet(payout.merchant, payout.currency, session);
+    await releaseReservedFunds(wallet._id, payout.amount, session);
+
     await postDoubleEntry({
       entryGroup: `payout_reversal_${payout._id}`,
       amount: payout.amount,
@@ -151,10 +231,21 @@ async function reversePayout(payout) {
       credit: { accountType: 'merchant_wallet', accountRef: payout.merchant.toString(), description: 'Payout reversal - funds returned' },
       session,
     });
-    payout.status = 'reversed';
+    payout.status = 'failed';
+    payout.failureReason = reason;
     await payout.save({ session });
     await session.commitTransaction();
     session.endSession();
+
+    await auditLog.record({
+      actorType: 'system',
+      actorRef: 'payout_service',
+      action: 'payout.reversed',
+      entityType: 'Payout',
+      entityRef: payout._id.toString(),
+      severity: 'warning',
+      metadata: { reason },
+    });
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
@@ -186,6 +277,7 @@ async function requestBulkPayout({ merchantId, currency = 'NGN', items }) {
         merchantId,
         amount: item.amount,
         currency: item.currency || currency,
+        idempotencyKey: item.idempotencyKey || null,
         recipientCode: item.recipientCode,
         destinationBankCode: item.destinationBankCode,
         destinationAccountNumber: item.destinationAccountNumber,
