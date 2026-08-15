@@ -38,4 +38,22 @@ module.exports = {
   // How many accounts to provision in one top-up pass when a bank's pool
   // is below POOL_MIN_THRESHOLD.
   POOL_TOPUP_COUNT: Number(process.env.POOL_TOPUP_COUNT || 20),
+
+  // ================= SETTLEMENT =================
+  // How long a confirmed inbound payment sits in pendingSettlementBalance
+  // before it's eligible to move to `settled`. Real processors do this
+  // to absorb late chargebacks/reversals from the bank side before
+  // treating money as truly theirs. Default here is a conservative T+1.
+  SETTLEMENT_CUTOFF_MINUTES: Number(process.env.SETTLEMENT_CUTOFF_MINUTES || 24 * 60),
+
+  // Additional hold between `settled` and `available` (payable). Zero by
+  // default - once settled, funds become payable in the same cycle.
+  // Raise this if you want a second buffer specifically before money is
+  // actually payable out to a real bank account.
+  SETTLEMENT_AVAILABILITY_DELAY_MINUTES: Number(process.env.SETTLEMENT_AVAILABILITY_DELAY_MINUTES || 0),
+
+  // Max transactions processed per settlement batch run, per phase. Keeps
+  // a single cron tick bounded instead of trying to settle an unbounded
+  // backlog in one pass if the job was down for a while.
+  SETTLEMENT_BATCH_SIZE: Number(process.env.SETTLEMENT_BATCH_SIZE || 500),
 };
