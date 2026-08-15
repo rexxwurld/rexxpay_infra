@@ -16,4 +16,17 @@ module.exports = {
   // accounts instead of generating fake local account numbers.
   rexxPayBankBaseUrl: process.env.REXXPAY_BANK_BASE_URL || 'https://rexxpay.onrender.com',
   rexxPayBankAdminKey: process.env.REXXPAY_BANK_ADMIN_KEY,
+
+  // Same shared secret as bankWebhookSecret above, reused to SIGN
+  // outgoing payout instructions to RexxPay Bank (it verifies them with
+  // its own SWIFTPAY_WEBHOOK_SECRET, which must be set to this same
+  // value - see rexxpay-main's src/middleware/verifySwiftpaySignature.js).
+  // Kept as its own name so the two directions can be rotated to
+  // different secrets later without a confusing variable name.
+  rexxPayBankPayoutSecret: process.env.REXXPAY_BANK_PAYOUT_SECRET || process.env.BANK_WEBHOOK_SECRET,
+
+  // Identifies this service to RexxPay Bank in payout instructions - must
+  // match the `linkedService` value RexxPay's Wallet/SettlementPool
+  // records use ("swiftpay").
+  linkedServiceName: process.env.LINKED_SERVICE_NAME || 'swiftpay',
 };
