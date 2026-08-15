@@ -23,6 +23,10 @@ erDiagram
     VIRTUAL_ACCOUNT ||--o{ TRANSACTION : "receives"
     VIRTUAL_ACCOUNT ||--o| INVOICE : "pay-in target for"
     VIRTUAL_ACCOUNT ||--o| SUBACCOUNT : "checkout split target (optional)"
+    VIRTUAL_ACCOUNT ||--o| CHECKOUT : "backs hosted checkout session"
+
+    MERCHANT ||--o{ CHECKOUT : "runs"
+    CUSTOMER ||--o{ CHECKOUT : "pays via"
 
     WALLET ||--o{ TRANSACTION : "credited by"
     WALLET ||--o{ LEDGER_ENTRY : "reconstructed from (accountType=merchant_wallet)"
@@ -41,6 +45,7 @@ erDiagram
     TRANSACTION ||--o| INVOICE : "settles"
     TRANSACTION ||--o{ REFUND : "reversed (partially/fully) by"
     TRANSACTION ||--o{ DISPUTE : "may be disputed by"
+    TRANSACTION }o--o| SETTLEMENT_BATCH : "moved by (settle/make_available phase)"
 
     PAYOUT ||--o{ LEDGER_ENTRY : "posts"
     SUBACCOUNT_SETTLEMENT ||--o{ LEDGER_ENTRY : "posts"
@@ -130,6 +135,10 @@ erDiagram
         integer split_amount "minor units, sent to subaccount"
         integer platform_fee "minor units, deducted from merchant share"
         integer net_amount "minor units, what actually credited the wallet"
+        string settlement_status "pending_settlement | settled | available (nullable - only set once status=success)"
+        datetime settled_at "nullable"
+        datetime available_at "nullable"
+        string settlement_batch_id FK "nullable, set once moved by a settlement batch"
         datetime created_at
         datetime updated_at
     }
@@ -311,4 +320,36 @@ erDiagram
         string ip
         string severity "info | warning | critical"
         datetime created_at
+    }
+
+    CHECKOUT {
+        string checkout_id PK
+        string token "256-bit random value, the only identifier in the hosted checkout URL"
+        string merchant_id FK
+        string customer_id FK
+        string virtual_account_id FK
+        string tx_ref "merchant's own private transaction reference"
+        string account_number
+        string bank_name "nullable"
+        integer amount_expected "minor units, nullable"
+        string redirect_url "server-side only, never returned from the public status endpoint"
+        datetime expires_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    SETTLEMENT_BATCH {
+        string batch_id PK
+        string batch_reference "unique"
+        string phase "settle | make_available"
+        string currency
+        datetime cutoff_time "everything eligible as of this instant"
+        string status "processing | completed | failed"
+        integer transaction_count
+        integer total_amount "minor units"
+        datetime started_at
+        datetime completed_at "nullable"
+        string error "nullable"
+        datetime created_at
+        datetime updated_at
     }
