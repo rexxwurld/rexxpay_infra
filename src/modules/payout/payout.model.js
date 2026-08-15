@@ -51,8 +51,15 @@ const payoutSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Sparse: only enforces uniqueness among documents that actually have an
-// idempotencyKey, so legacy/no-key payouts aren't affected.
-payoutSchema.index({ merchant: 1, idempotencyKey: 1 }, { unique: true, sparse: true });
+// A plain `sparse` index does NOT skip documents where idempotencyKey is
+// explicitly `null` (only where the field is missing entirely) - and this
+// schema's `default: null` means the field is always present. So a naive
+// sparse unique index still collides on {merchant, null} for the 2nd+
+// no-key payout from the same merchant (E11000 dup key). A partial index
+// filtered to actual strings is what correctly excludes null/missing.
+payoutSchema.index(
+  { merchant: 1, idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
+);
 
 module.exports = mongoose.model('Payout', payoutSchema);
