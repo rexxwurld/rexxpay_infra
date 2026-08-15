@@ -1,4 +1,4 @@
-# RexxPay
+# SwiftPay 
 
 A Paystack-style payment infrastructure: merchants integrate, onboard customers,
 get assigned dedicated virtual accounts, and receive verified webhook-driven
