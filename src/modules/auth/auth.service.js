@@ -13,7 +13,9 @@ const {
 const auditLog = require('../audit/auditLog.service');
 const { jwtSecret, jwtExpiresIn } = require('../../config/env');
 
-async function registerMerchant({ businessName, email, password }) {
+const VALID_PLANS = ['starter', 'growth', 'enterprise'];
+
+async function registerMerchant({ businessName, email, password, plan }) {
   const existing = await Merchant.findOne({ email });
   if (existing) throw new Error('email_already_registered');
 
@@ -21,11 +23,13 @@ async function registerMerchant({ businessName, email, password }) {
   const test = generateKeyPair('test');
   const live = generateKeyPair('live');
   const webhookSecret = generateWebhookSecret();
+  const resolvedPlan = VALID_PLANS.includes(plan) ? plan : 'starter';
 
   const merchant = await Merchant.create({
     businessName,
     email,
     passwordHash,
+    plan: resolvedPlan,
     testPublicKey: test.publicKey,
     testSecretKeyHash: hashSecretKey(test.secretKey),
     livePublicKey: live.publicKey,
