@@ -28,6 +28,7 @@ const paymentRoutes = require('./modules/payment/payment.routes');
 const checkoutRoutes = require('./modules/checkout/checkout.routes');
 const subscriptionRoutes = require('./modules/subscription/subscription.routes');
 const disputeRoutes = require('./modules/dispute/dispute.routes');
+const settlementRoutes = require('./modules/settlement/settlement.routes');
 
 const {
   notFound,
@@ -120,6 +121,7 @@ apiV1.use('/refunds', refundRoutes);
 apiV1.use('/subaccounts', subaccountRoutes);
 apiV1.use('/recipients', recipientRoutes);
 apiV1.use('/admin', adminRoutes);
+apiV1.use('/admin/settlement', settlementRoutes);
 apiV1.use('/payments', paymentRoutes);
 apiV1.use('/subscriptions', subscriptionRoutes);
 apiV1.use('/disputes', disputeRoutes);
