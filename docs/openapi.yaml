@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
-  title: RexxPay API
+  title: SwiftPay API
   description: >
-    RexxPay - Paystack-style payment infrastructure: merchants, customers,
+    SwiftPay - Paystack-style payment infrastructure: merchants, customers,
     dedicated virtual accounts, wallets, transactions, payouts, refunds,
     subaccounts, subscriptions and disputes. Served under a versioned
     path (/api/v1); the unversioned /api alias is kept for back-compat
@@ -18,7 +18,7 @@ info:
     server and never expose it in browser JavaScript.
 
     Webhook delivery is server-to-server. The merchant webhook URL is supplied
-    by the merchant and is not a RexxPay public API path. Merchants should
+    by the merchant and is not a SwiftPay public API path. Merchants should
     verify the X-RexxPay-Signature HMAC-SHA512 signature against the exact raw
     request body, acknowledge valid events with HTTP 2xx, and make fulfillment
     idempotent because webhook delivery may be retried.
@@ -47,7 +47,9 @@ tags:
   - name: Recipients
   - name: Subscriptions
   - name: Disputes
+  - name: Settlement
   - name: Webhooks
+  - name: Admin
   - name: Admin
   - name: Mock Bank
 
@@ -116,6 +118,53 @@ components:
         status:
           type: string
           enum: [pending, processing, successful, failed, reversed]
+
+    Subaccount:
+      type: object
+      properties:
+        _id: { type: string }
+        merchant: { type: string }
+        subaccountCode: { type: string, example: sub_xxxxx }
+        businessName: { type: string }
+        settlementBankCode: { type: string }
+        settlementAccountNumber: { type: string }
+        settlementAccountName: { type: string }
+        defaultSplitPercentage: { type: integer, nullable: true, minimum: 1, maximum: 100 }
+        active: { type: boolean }
+        balance:
+          type: integer
+          description: "Only present on GET /subaccounts/{id} — accrued ledger balance, minor units"
+
+    Recipient:
+      type: object
+      properties:
+        _id: { type: string }
+        merchant: { type: string }
+        recipientCode: { type: string, example: rcp_xxxxx }
+        label: { type: string }
+        bankCode: { type: string }
+        accountNumber: { type: string }
+        accountName: { type: string }
+        active: { type: boolean }
+
+    SettlementBatch:
+      type: object
+      properties:
+        _id: { type: string }
+        batchReference: { type: string }
+        phase:
+          type: string
+          enum: [settle, make_available]
+        currency: { type: string }
+        cutoffTime: { type: string, format: date-time }
+        status:
+          type: string
+          enum: [processing, completed, failed]
+        transactionCount: { type: integer }
+        totalAmount: { type: integer, description: "Minor units" }
+        startedAt: { type: string, format: date-time }
+        completedAt: { type: string, format: date-time, nullable: true }
+        error: { type: string, nullable: true }
 
     Plan:
       type: object
@@ -315,8 +364,62 @@ paths:
     post:
       tags: [Auth]
       summary: Second step of login when 2FA is enabled — exchanges tempToken for a full session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tempToken, token]
+              properties:
+                tempToken: { type: string, description: "Short-lived token returned by /auth/login" }
+                token: { type: string, description: "6-digit TOTP code" }
+                backupCode: { type: string, description: "Alternative to token — one-time backup code" }
       responses:
         "200": { description: Session token }
+
+  /auth/2fa/setup:
+    post:
+      tags: [Auth]
+      summary: Begin 2FA setup — returns the TOTP secret/QR data for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200": { description: "TOTP secret and provisioning URI; 2FA not yet enabled until confirmed via /auth/2fa/enable" }
+
+  /auth/2fa/enable:
+    post:
+      tags: [Auth]
+      summary: Confirm setup and turn 2FA on for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: "6-digit TOTP code from the authenticator app" }
+      responses:
+        "200": { description: 2FA enabled, includes backup codes }
+
+  /auth/2fa/disable:
+    post:
+      tags: [Auth]
+      summary: Turn 2FA off for the authenticated merchant
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, token]
+              properties:
+                password: { type: string }
+                token: { type: string, description: "6-digit TOTP code, confirms the request" }
+      responses:
+        "200": { description: 2FA disabled }
 
   /merchant/me:
     get:
@@ -329,7 +432,7 @@ paths:
   /merchant/webhook-url:
     patch:
       tags: [Merchant]
-      summary: Set the URL RexxPay should POST webhook notifications to
+      summary: Set the URL SwiftPay should POST webhook notifications to
       security: [{ ApiKeyAuth: [] }]
       responses:
         "200": { description: Updated }
@@ -569,6 +672,189 @@ paths:
         "201":
           description: Bulk payout accepted
 
+  /recipients:
+    post:
+      tags: [Recipients]
+      summary: Save a payout destination for reuse
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [label, bankCode, accountNumber, accountName]
+              properties:
+                label: { type: string, description: "Merchant's own name for this recipient, e.g. \"Jane - Payroll\"" }
+                bankCode: { type: string }
+                accountNumber: { type: string }
+                accountName: { type: string }
+      responses:
+        "201":
+          description: Recipient created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Recipient" }
+    get:
+      tags: [Recipients]
+      summary: List saved recipients
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Recipients
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Recipient" }
+
+  /recipients/{id}:
+    get:
+      tags: [Recipients]
+      summary: Get a single recipient
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Recipient
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Recipient" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [Recipients]
+      summary: Deactivate a recipient
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Recipient deactivated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Recipient" }
+
+  /subaccounts:
+    post:
+      tags: [Subaccounts]
+      summary: "Create a subaccount (split-payment sub-merchant)"
+      security: [{ ApiKeyAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [businessName, settlementBankCode, settlementAccountNumber, settlementAccountName]
+              properties:
+                businessName: { type: string }
+                settlementBankCode: { type: string }
+                settlementAccountNumber: { type: string }
+                settlementAccountName: { type: string }
+                defaultSplitPercentage:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                  description: "Used at checkout time when no explicit splitPercentage is given"
+      responses:
+        "201":
+          description: Subaccount created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Subaccount" }
+    get:
+      tags: [Subaccounts]
+      summary: List subaccounts
+      security: [{ ApiKeyAuth: [] }]
+      responses:
+        "200":
+          description: Subaccounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Subaccount" }
+
+  /subaccounts/{id}:
+    get:
+      tags: [Subaccounts]
+      summary: Get a single subaccount, including its current settleable balance
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Subaccount, with a `balance` field (minor units) added from the ledger
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Subaccount" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /subaccounts/{id}/settle:
+    post:
+      tags: [Subaccounts]
+      summary: Settle a subaccount's accrued ledger balance out to its bank account
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "201":
+          description: Settlement created (mirrors a Payout, drains the subaccount's ledger balance)
+        "400":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /refunds:
     post:
       tags: [Refunds]
@@ -605,6 +891,32 @@ paths:
       responses:
         "200":
           description: Refunds
+
+  /refunds/{id}:
+    get:
+      tags: [Refunds]
+      summary: Get a single refund
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Refund
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Refund" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
   /subscriptions/plans:
     post:
@@ -751,6 +1063,32 @@ paths:
         "201":
           description: Dispute opened
 
+  /disputes/{id}:
+    get:
+      tags: [Disputes]
+      summary: Get a single dispute (merchant-visible, own disputes only)
+      security: [{ ApiKeyAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Dispute
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data: { $ref: "#/components/schemas/Dispute" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /disputes/{id}/evidence:
     post:
       tags: [Disputes]
@@ -822,9 +1160,65 @@ paths:
         "200":
           description: Updated merchant fee config
 
+  /admin/settlement/run:
+    post:
+      tags: [Settlement]
+      summary: "Force a settlement cycle now (ops-only)"
+      description: >
+        Moves eligible transactions pending_settlement → settled → available
+        and writes a SettlementBatch record per phase run. The real trigger
+        is the scheduled job (`npm run run-settlement`); this exists so an
+        operator can force a cycle out-of-band (e.g. after downtime).
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: currency
+          schema: { type: string, default: NGN }
+      responses:
+        "200":
+          description: Cycle result summary
+        "500":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /admin/settlement/batches:
+    get:
+      tags: [Settlement]
+      summary: "List recent settlement batches (ops-only)"
+      security: [{ AdminKeyAuth: [] }]
+      parameters:
+        - in: query
+          name: currency
+          schema: { type: string }
+        - in: query
+          name: phase
+          schema: { type: string, enum: [settle, make_available] }
+        - in: query
+          name: limit
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Settlement batches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: boolean }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/SettlementBatch" }
+        "500":
+          description: Error
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   # Merchant webhook contract:
   # The URL is owned by the merchant and registered with PATCH /merchant/webhook-url.
-  # RexxPay POSTs an envelope shaped like:
+  # SwiftPay POSTs an envelope shaped like:
   # {
   #   "event": "transaction.success",
   #   "data": {
