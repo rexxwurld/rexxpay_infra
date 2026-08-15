@@ -230,8 +230,38 @@ async function maintainAccountPools({
   return results;
 }
 
+// Pushes SwiftPay's assign/release lifecycle to RexxPay Bank so the
+// bank's own wallet.status field (used by deposit.service.js's
+// assigned-only check) actually reflects reality. Failures are logged,
+// not thrown - a temporarily-down/cold-starting bank shouldn't block a
+// checkout from being created locally, but it does mean a deposit could
+// land on an account the bank still thinks is "available" until this
+// eventually succeeds (e.g. via a retry from a reconciliation job).
+async function syncBankAccountStatus(accountNumber, action) {
+  try {
+    await axios.patch(
+      `${rexxPayBankBaseUrl}/api/v1/admin/pool-accounts/${accountNumber}/${action}`,
+      {},
+      {
+        headers: { 'x-admin-key': rexxPayBankAdminKey },
+        timeout: 15000,
+      }
+    );
+  } catch (err) {
+    console.error(
+      `[bankPartner] failed to ${action} account ${accountNumber} on RexxPay Bank:`,
+      err.response?.data?.message || err.message
+    );
+  }
+}
+
+const assignBankPoolAccount = (accountNumber) => syncBankAccountStatus(accountNumber, 'assign');
+const releaseBankPoolAccount = (accountNumber) => syncBankAccountStatus(accountNumber, 'release');
+
 module.exports = {
   ensureDefaultBankPartners,
   provisionAccountPool,
   maintainAccountPools,
+  assignBankPoolAccount,
+  releaseBankPoolAccount,
 };
