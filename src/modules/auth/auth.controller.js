@@ -10,8 +10,8 @@ const {
 
 async function register(req, res) {
   try {
-    const { businessName, email, password } = req.body;
-    const { merchant, testSecretKey, liveSecretKey, webhookSecret } = await registerMerchant({ businessName, email, password });
+    const { businessName, email, password, plan } = req.body;
+    const { merchant, testSecretKey, liveSecretKey, webhookSecret } = await registerMerchant({ businessName, email, password, plan });
     res.status(201).json({
       status: true,
       message: 'Merchant registered. Store your secret keys and webhook secret now - they will not be shown again.',
@@ -19,6 +19,7 @@ async function register(req, res) {
         merchantId: merchant._id,
         businessName: merchant.businessName,
         email: merchant.email,
+        plan: merchant.plan,
         testPublicKey: merchant.testPublicKey,
         testSecretKey,
         livePublicKey: merchant.livePublicKey,
