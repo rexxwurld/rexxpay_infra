@@ -4,7 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>RexxPay — Dedicated virtual accounts for Nigerian merchants</title>
-<link rel="stylesheet" href="/css/style.css" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/site.css" />
 </head>
 <body>
 
@@ -22,7 +23,7 @@
   <p class="lede">RexxPay assigns a dedicated virtual account per customer, verifies bank transfers with signed webhooks, and credits your wallet — no polling, no manual reconciliation.</p>
   <div class="hero-cta">
     <a href="/onboarding.html?tab=register" class="btn btn-primary">Create a merchant account</a>
-    <a href="#integrate" class="btn">View the integration</a>
+    <a href="#integrate" class="btn btn-ghost">View the integration</a>
   </div>
 
   <div class="rail-diagram">
@@ -69,7 +70,63 @@ POST your /webhook              ← RexxPay pushes "transaction.success"
   </section>
 </div>
 
-<footer>Built by Rexxwurld · RexxPay is test-mode infrastructure, not a licensed money transmitter.</footer>
+<!-- Pricing / Plans -->
+<section class="pricing-section" id="pricing">
+  <div class="wrap">
+    <div class="pricing-head">
+      <h2>Simple, transparent pricing</h2>
+      <p>Pick a plan when you sign up — you can change it later from your dashboard.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="plan-card">
+        <span class="plan-name">Starter</span>
+        <span class="plan-desc">For testing and small integrations</span>
+        <span class="plan-price">Free</span>
+        <ul>
+          <li>Up to 100 transactions / month</li>
+          <li>Test-mode virtual accounts</li>
+          <li>Standard API access</li>
+          <li>Email support</li>
+        </ul>
+        <a href="/onboarding.html?tab=register&plan=starter" class="btn btn-primary btn-block">Choose Starter</a>
+      </div>
+      <div class="plan-card">
+        <span class="plan-name">Growth</span>
+        <span class="plan-desc">For businesses going live</span>
+        <span class="plan-price">$99<small>/month</small></span>
+        <ul>
+          <li>Unlimited transactions</li>
+          <li>Live-mode virtual accounts</li>
+          <li>Webhooks & payout API</li>
+          <li>Priority support</li>
+        </ul>
+        <a href="/onboarding.html?tab=register&plan=growth" class="btn btn-primary btn-block">Choose Growth</a>
+      </div>
+      <div class="plan-card">
+        <span class="plan-name">Enterprise</span>
+        <span class="plan-desc">Custom volume and terms</span>
+        <span class="plan-price">Custom</span>
+        <ul>
+          <li>Everything in Growth</li>
+          <li>Dedicated account manager</li>
+          <li>Custom fee structure</li>
+          <li>SLA guarantees</li>
+        </ul>
+        <a href="/onboarding.html?tab=register&plan=enterprise" class="btn btn-primary btn-block">Talk to us</a>
+      </div>
+    </div>
+    <p class="plan-note">All plans run in test mode by default — no card required, no KYC to start building.</p>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="foot-links">
+    <a href="/onboarding.html?tab=register">Sign up</a>
+    <a href="/onboarding.html?tab=login">Log in</a>
+    <a href="#integrate">Docs</a>
+  </div>
+  Built by Rexxwurld · RexxPay is test-mode infrastructure, not a licensed money transmitter.
+</footer>
 
 </body>
 </html>

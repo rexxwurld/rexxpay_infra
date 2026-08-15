@@ -4,7 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>RexxPay — Get started</title>
-<link rel="stylesheet" href="/css/style.css" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/site.css" />
 </head>
 <body>
 
@@ -54,9 +55,27 @@
       </div>
       <div class="field">
         <label>Password</label>
-        <input type="password" name="password" required minlength="8" placeholder="At least 8 characters" />
+        <input type="password" name="password" id="password" required minlength="8" placeholder="At least 8 characters" />
+      </div>
+      <div class="field">
+        <label>Confirm password</label>
+        <input type="password" id="confirmPassword" required minlength="8" placeholder="Re-enter your password" />
+      </div>
+      <div class="field-hint" id="passwordMismatch">Passwords don't match.</div>
+      <div class="field">
+        <label>Plan</label>
+        <select name="plan" id="plan" required>
+          <option value="starter">Starter — Free</option>
+          <option value="growth">Growth — $99/month</option>
+          <option value="enterprise">Enterprise — Custom</option>
+        </select>
+      </div>
+      <div class="field-check">
+        <input type="checkbox" id="agreeTerms" required />
+        <label for="agreeTerms">I agree to the Terms of Service and Privacy Policy</label>
       </div>
       <button type="submit" class="btn btn-primary btn-block">Create account</button>
+      <div class="switch-tab">Already have an account? <a href="#" data-tab="login" class="switch-link">Log in</a></div>
     </form>
 
     <!-- Login form -->
@@ -72,10 +91,15 @@
         <input type="password" name="password" required />
       </div>
       <button type="submit" class="btn btn-primary btn-block">Log in</button>
+      <div class="switch-tab">Don't have an account? <a href="#" data-tab="register" class="switch-link">Create one</a></div>
     </form>
 
   </div>
 </div>
+
+<footer class="site-footer">
+  Built by Rexxwurld · RexxPay is test-mode infrastructure, not a licensed money transmitter.
+</footer>
 
 <script src="/js/api.js"></script>
 <script src="/js/onboarding.js"></script>
