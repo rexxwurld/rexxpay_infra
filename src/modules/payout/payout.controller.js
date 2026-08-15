@@ -4,10 +4,16 @@ const { requestPayout, requestBulkPayout, listForMerchant } = require('./payout.
 async function create(req, res) {
   try {
     const { amount, currency, recipientCode, destinationBankCode, destinationAccountNumber, destinationAccountName } = req.body;
+    // Accept an idempotency key either as a header (conventional for
+    // this kind of endpoint) or in the body, so existing integrations
+    // that already send one in the body don't have to change anything.
+    const idempotencyKey = req.headers['idempotency-key'] || req.body.idempotencyKey || null;
+
     const payout = await requestPayout({
       merchantId: req.merchant.id,
       amount,
       currency,
+      idempotencyKey,
       recipientCode,
       destinationBankCode,
       destinationAccountNumber,
