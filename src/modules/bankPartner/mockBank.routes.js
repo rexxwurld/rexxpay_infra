@@ -1,74 +1,228 @@
 // src/modules/bankPartner/mockBank.routes.js
-// This route stands in for "someone using their real bank app to transfer
-// money." It is NOT part of the real payment infra - it exists so you can
-// test the full loop locally: simulate a transfer -> mock bank signs and
-// fires a webhook -> RexxPay verifies it -> wallet gets credited.
 //
-// Delete or disable this route entirely before going anywhere near
-// production; a real bank partner would never let a client trigger its
-// own "payment succeeded" event.
+// DEVELOPMENT ONLY.
+//
+// This route simulates a customer using their real bank app to transfer
+// money into a virtual account issued by RexxPay.
+//
+// IMPORTANT:
+// SwiftPay is the merchant/integration.
+// RexxPay is the payment processor.
+//
+// Therefore this simulator MUST NOT call SwiftPay's own /api/webhooks/bank.
+// It sends the simulated transfer to RexxPay's mock-bank endpoint.
+//
+// Flow:
+//
+// SwiftPay simulator
+//      ↓
+// RexxPay /api/v1/mock-bank/simulate-transfer
+//      ↓
+// RexxPay /api/v1/webhooks/bank
+//      ↓
+// RexxPay webhook processor
+//      ↓
+// RexxPay transaction
+//      ↓
+// RexxPay pending settlement
+//      ↓
+// settlement
+//      ↓
+// RexxPay available balance
+//
+// Delete/disable this route before production.
 
 const express = require('express');
 const router = express.Router();
-const axios = require('axios'); // add "axios" to package.json if you wire this up
-const { nanoid } = require('nanoid');
-const { signPayload } = require('../../utils/webhookSignature');
-const WebhookEvent = require('../webhook/webhookEvent.model');
-const Transaction = require('../transaction/transaction.model');
+const axios = require('axios');
+
+
+// -----------------------------------------------------------------------------
+// RexxPay configuration
+// -----------------------------------------------------------------------------
+
+const REXXPAY_BASE_URL =
+  process.env.REXXPAY_BASE_URL ||
+  'https://rexxpay.onrender.com';
+
+
+// -----------------------------------------------------------------------------
+// SIMULATE BANK TRANSFER
+// -----------------------------------------------------------------------------
+//
+// This endpoint belongs to SwiftPay, but the simulated transfer itself is
+// processed by RexxPay.
+//
+// SwiftPay does NOT:
+//
+// - generate the bank signature
+// - create the bank reference
+// - call RexxPay's webhook directly
+// - create a transaction
+// - credit a wallet
+//
+// RexxPay's mock-bank endpoint does all of that.
+//
+// -----------------------------------------------------------------------------
 
 router.post('/simulate-transfer', async (req, res) => {
-  const { accountNumber, amount, currency = 'NGN' } = req.body;
-
-  if (!accountNumber || !Number.isInteger(amount) || amount <= 0) {
-    return res.status(400).json({ status: false, message: 'accountNumber and integer amount (minor units) are required' });
-  }
-
-  const payload = {
+  const {
     accountNumber,
-    amountReceived: amount,
-    currency,
-    bankReference: `bank_${nanoid(16)}`,
-  };
-  const signature = signPayload(payload);
+    amount,
+    currency = 'NGN',
+  } = req.body;
 
-  // Fire the webhook to our own server, exactly like a real bank partner would.
-  const webhookUrl = `${req.protocol}://${req.get('host')}/api/webhooks/bank`;
-  const response = await axios.post(webhookUrl, payload, {
-    headers: { 'x-bank-signature': signature, 'Content-Type': 'application/json' },
-  });
+  /*
+  |--------------------------------------------------------------------------
+  | VALIDATION
+  |--------------------------------------------------------------------------
+  */
 
-  res.json({ status: true, message: 'simulated transfer sent to webhook', webhookResponse: response.data });
-});
-
-// Dev-only: lets simulate-transfer.html poll for what actually happened to
-// the webhook it just fired, instead of the POST above's 202 ("queued for
-// processing") being mistaken for "the payment succeeded". Not meant for
-// merchant/production use - no auth on purpose, same as the rest of this
-// mock-bank router.
-router.get('/simulate-transfer/:eventId/status', async (req, res) => {
-  const event = await WebhookEvent.findById(req.params.eventId).catch(() => null);
-  if (!event) {
-    return res.status(404).json({ status: false, message: 'event_not_found' });
+  if (
+    !accountNumber ||
+    !Number.isInteger(amount) ||
+    amount <= 0
+  ) {
+    return res.status(400).json({
+      status: false,
+      message:
+        'accountNumber and integer amount (minor units) are required',
+    });
   }
 
-  const result = {
-    eventStatus: event.status, // queued | processing | processed | failed
-    lastError: event.lastError || null,
-    attempts: event.attempts,
-  };
+  /*
+  |--------------------------------------------------------------------------
+  | SEND SIMULATED TRANSFER TO REXXPAY
+  |--------------------------------------------------------------------------
+  |
+  | IMPORTANT:
+  |
+  | The amount is already in minor units.
+  |
+  | Example:
+  |
+  | ₦200,000
+  |      ↓
+  | 20,000,000 kobo
+  |
+  */
 
-  if (event.status === 'processed') {
-    const bankReference = event.rawBody?.bankReference;
-    const transaction = bankReference
-      ? await Transaction.findOne({ reference: bankReference })
-      : null;
+  try {
+    const response = await axios.post(
+      `${REXXPAY_BASE_URL}/api/v1/mock-bank/simulate-transfer`,
+      {
+        accountNumber,
+        amount,
+        currency,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
 
-    result.transactionStatus = transaction?.status || null; // success | partial | over | flagged | failed
-    result.flagReason = transaction?.flagReason || null;
-    result.amountReceived = transaction?.amountReceived ?? null;
+        // The mock-bank endpoint should normally respond quickly because
+        // RexxPay only queues the webhook before returning 202.
+        timeout: 15000,
+      }
+    );
+
+    /*
+    |--------------------------------------------------------------------------
+    | RETURN REXXPAY'S RESPONSE
+    |--------------------------------------------------------------------------
+    */
+
+    return res.json({
+      status: true,
+      message: 'simulated transfer sent to RexxPay',
+      rexpayResponse: response.data,
+    });
+
+  } catch (error) {
+
+    /*
+    |--------------------------------------------------------------------------
+    | REXXPAY ERROR
+    |--------------------------------------------------------------------------
+    */
+
+    console.error(
+      '[SwiftPay mock-bank] RexxPay simulation request failed:',
+      error.response?.data || error.message
+    );
+
+    return res.status(
+      error.response?.status || 502
+    ).json({
+      status: false,
+      message: 'Unable to send simulated transfer to RexxPay',
+      rexpayResponse: error.response?.data || null,
+    });
   }
-
-  res.json({ status: true, data: result });
 });
+
+
+// -----------------------------------------------------------------------------
+// SIMULATE TRANSFER STATUS
+// -----------------------------------------------------------------------------
+//
+// The event ID is created by RexxPay.
+//
+// Therefore SwiftPay asks RexxPay for the processing result instead of looking
+// inside SwiftPay's own WebhookEvent/Transaction collections.
+//
+// -----------------------------------------------------------------------------
+
+router.get(
+  '/simulate-transfer/:eventId/status',
+  async (req, res) => {
+
+    const { eventId } = req.params;
+
+    if (!eventId) {
+      return res.status(400).json({
+        status: false,
+        message: 'eventId is required',
+      });
+    }
+
+    try {
+
+      /*
+      |--------------------------------------------------------------------------
+      | ASK REXXPAY FOR THE WEBHOOK RESULT
+      |--------------------------------------------------------------------------
+      */
+
+      const response = await axios.get(
+        `${REXXPAY_BASE_URL}/api/v1/mock-bank/simulate-transfer/${eventId}/status`,
+        {
+          timeout: 10000,
+        }
+      );
+
+      return res.json({
+        status: true,
+        data: response.data?.data || null,
+      });
+
+    } catch (error) {
+
+      console.error(
+        '[SwiftPay mock-bank] RexxPay status request failed:',
+        error.response?.data || error.message
+      );
+
+      return res.status(
+        error.response?.status || 502
+      ).json({
+        status: false,
+        message: 'Unable to retrieve transfer status from RexxPay',
+        rexpayResponse: error.response?.data || null,
+      });
+    }
+  }
+);
+
 
 module.exports = router;
