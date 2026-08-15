@@ -23,7 +23,6 @@ const refundRoutes = require('./modules/refund/refund.routes');
 const subaccountRoutes = require('./modules/subaccount/subaccount.routes');
 const recipientRoutes = require('./modules/recipient/recipient.routes');
 const adminRoutes = require('./modules/admin/admin.routes');
-const mockBankRoutes = require('./modules/bankPartner/mockBank.routes');
 const paymentRoutes = require('./modules/payment/payment.routes');
 const checkoutRoutes = require('./modules/checkout/checkout.routes');
 const subscriptionRoutes = require('./modules/subscription/subscription.routes');
@@ -126,12 +125,7 @@ apiV1.use('/payments', paymentRoutes);
 apiV1.use('/subscriptions', subscriptionRoutes);
 apiV1.use('/disputes', disputeRoutes);
 
-// NOTE: left exactly as it was (still unconditionally mounted, guard
-// still commented out below) at your request - not touched by this pass.
-// if (process.env.NODE_ENV !== 'production') {
-//   apiV1.use('/mock-bank', mockBankRoutes);
-// }
-apiV1.use('/mock-bank', mockBankRoutes);
+
 
 app.use('/api/v1', apiV1);
 app.use('/api', apiV1); // back-compat alias - see note above
