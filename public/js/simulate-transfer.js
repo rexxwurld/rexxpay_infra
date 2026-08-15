@@ -112,7 +112,7 @@ form.addEventListener('submit', async (event) => {
       throw new Error(data.message || `Simulation failed (HTTP ${response.status}).`);
     }
 
-    const eventId = data.webhookResponse?.eventId;
+    const eventId = data.rexpayResponse?.webhookResponse?.eventId;
     if (!eventId) {
       // Fallback: we don't have an event to poll, so we can't confirm the
       // real outcome - be honest about that instead of claiming success.
