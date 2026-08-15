@@ -25,7 +25,7 @@ module.exports = {
   // payment for longer than this is considered abandoned (customer never
   // paid, or paid a different way) and gets released back to the
   // available pool so a future order can reuse the account number.
-  VIRTUAL_ACCOUNT_EXPIRY_MINUTES: Number(process.env.VIRTUAL_ACCOUNT_EXPIRY_MINUTES || 60),
+  VIRTUAL_ACCOUNT_EXPIRY_MINUTES: Number(process.env.VIRTUAL_ACCOUNT_EXPIRY_MINUTES || 30),
 
   // How long a merchant has to submit evidence on a dispute before it's
   // eligible for resolution against them by default.
