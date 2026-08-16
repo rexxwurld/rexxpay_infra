@@ -4,10 +4,14 @@ const { requestPayout, requestBulkPayout, listForMerchant } = require('./payout.
 async function create(req, res) {
   try {
     const { amount, currency, recipientCode, destinationBankCode, destinationAccountNumber, destinationAccountName } = req.body;
-    // Accept an idempotency key either as a header (conventional for
-    // this kind of endpoint) or in the body, so existing integrations
-    // that already send one in the body don't have to change anything.
     const idempotencyKey = req.headers['idempotency-key'] || req.body.idempotencyKey || null;
+
+    // Payouts must be triggered with an actual sk_test_/sk_live_ API
+    // key, not a dashboard session - there's no safe "which wallet did
+    // you mean" default for moving money out.
+    if (req.merchant.mode !== 'test' && req.merchant.mode !== 'live') {
+      return res.status(401).json({ status: false, message: 'api_key_required_for_payouts' });
+    }
 
     const payout = await requestPayout({
       merchantId: req.merchant.id,
@@ -18,6 +22,7 @@ async function create(req, res) {
       destinationBankCode,
       destinationAccountNumber,
       destinationAccountName,
+      mode: req.merchant.mode,
     });
     res.status(201).json({ status: true, data: payout });
   } catch (err) {
@@ -28,10 +33,16 @@ async function create(req, res) {
 async function createBulk(req, res) {
   try {
     const { currency, items } = req.body;
+
+    if (req.merchant.mode !== 'test' && req.merchant.mode !== 'live') {
+      return res.status(401).json({ status: false, message: 'api_key_required_for_payouts' });
+    }
+
     const result = await requestBulkPayout({
       merchantId: req.merchant.id,
       currency,
       items,
+      mode: req.merchant.mode,
     });
     res.status(201).json({ status: true, data: result });
   } catch (err) {
@@ -41,7 +52,7 @@ async function createBulk(req, res) {
 
 async function list(req, res) {
   try {
-    const payouts = await listForMerchant(req.merchant.id);
+    const payouts = await listForMerchant(req.merchant.id, req.merchant.mode || null);
     res.json({ status: true, data: payouts });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });
