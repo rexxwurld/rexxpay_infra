@@ -161,13 +161,113 @@ way the server does):
 | `npm run auto-provision-pool` | Checks each bank partner's available-account count and tops it up by `POOL_TOPUP_COUNT` whenever it drops to or below `POOL_MIN_THRESHOLD`. Intended to run on a cron. |
 | `npm run release-stale-accounts` | Releases virtual accounts stuck in `assigned` past `VIRTUAL_ACCOUNT_EXPIRY_MINUTES` with no payment, back to the available pool. Intended to run on a cron every 5–15 minutes. |
 | `npm run reactivate-expired-accounts` | Companion to the release job — moves `deactivated` accounts whose `cooldownUntil` has passed back to `available` so they can be reassigned. |
-| `npm run generate-invoices` | Sweeps subscriptions with a due `nextBillingDate`, creates the `Invoice` + a virtual account for the customer to pay it into. Intended to run on a cron. |
-| `npm run reconcile -- path/to/settlement-file.json` | Compares local `Transaction` records against a bank settlement export and reports mismatches in both directions. |
+| `npm run generate-invoices` | Sweeps subscriptions with a due `nextBillingDate`, creates the `Invoice` + a virtual account for the customer to pay it into. Intended to run on a cron. Currently a no-op until at least one merchant creates a `Plan` and subscribes a customer to it — safe to leave running either way. |
+| `npm run reconcile -- path/to/settlement-file.json` | Compares local `Transaction` records against a bank settlement export and reports mismatches in both directions. **Not yet automatable** — RexxPay Bank doesn't currently expose an endpoint or export that supplies this file automatically, so it's still a manual step: get the settlement file from RexxPay Bank, then run this by hand. See "Known gaps" below. |
 | `npm run run-settlement` | Runs one settlement cycle now: moves eligible transactions `pending_settlement → settled → available` and writes a `SettlementBatch` record for each phase. Intended to run on a cron; can also be triggered ad hoc via `POST /api/v1/admin/settlement/run`. |
 
 `webhook.processor.js` also self-heals on server startup: any webhook event
 left mid-processing after a crash is picked up by `redriveStuckEvents()`
 automatically — no manual step needed for that one.
+
+## Production Setup (Render + Hostinger cron)
+
+Current live deployment: `checkout-swiftpay` web service on Render
+(`https://checkout-rexxpay.onrender.com`), Free instance type.
+
+### Redis (required — webhook processing silently does nothing without it)
+
+The durable webhook queue (`src/queue/webhookQueue.js` + `webhookWorker.js`)
+requires Redis. Without `REDIS_URL` set, it falls back to
+`redis://127.0.0.1:6379`, which doesn't exist in this deployment — every
+webhook then gets persisted to Mongo (`WebhookEvent`, `status: 'queued'`)
+but **never processed**: no transaction gets recorded, no merchant webhook
+fires, and the failure is silent (only logged, never surfaced anywhere).
+
+Fixed by provisioning a Render **Key Value** instance (Redis-compatible),
+Free tier, same region (Oregon) as the web service, and setting
+`REDIS_URL` to its **Internal** connection string on the `checkout-swiftpay`
+environment. `redriveStuckEvents()` (runs on every server boot) then
+sweeps up anything that got stuck before the fix and re-processes it
+automatically.
+
+Free-tier Redis has no persistence (`Off`) and can restart (Render
+maintenance, OOM at 25 MB, etc.) — this is an accepted trade-off, not a
+bug: the durable copy of every webhook event lives in Mongo first, so a
+Redis restart only loses the "go process this" notification, not the
+underlying data. `redriveStuckEvents()` on the next SwiftPay server
+restart re-sends that notification. The gap: if Redis restarts but
+SwiftPay's own server doesn't restart for a while after, an event can sit
+stalled (silently) until SwiftPay's next deploy/restart triggers the sweep.
+
+### Cron (scheduled jobs, run externally via Hostinger)
+
+Render Cron Jobs cost money (no free tier for the service type itself —
+~$1/mo minimum per job, so ~$5–6/mo total for 5 jobs). Instead, the same
+scripts above are triggered via plain `GET` requests to admin-key-guarded
+routes on the running web service (`src/modules/admin/admin.routes.js`,
+`/cron/*`), called externally by cron jobs on existing Hostinger hosting
+(same pattern already used to keep RexxPay Bank's `/health` warm).
+
+| Route | Mirrors | Schedule |
+|---|---|---|
+| `GET /api/admin/cron/release-stale-accounts` | `scripts/release-stale-accounts.js` | every 10 min |
+| `GET /api/admin/cron/reactivate-expired-accounts` | `scripts/reactivate-expired-accounts.js` | every 10 min |
+| `GET /api/admin/cron/auto-provision-pool` | `scripts/auto-provision-pool.js` | every 15 min |
+| `GET /api/admin/cron/run-settlement` | `scripts/run-settlement.js` | daily, `10 0 * * *` |
+| `GET /api/admin/cron/generate-invoices` | `scripts/generate-invoices.js` | daily, `0 0 * * *` |
+
+All guarded by the same `requireAdminKey` middleware as the rest of
+`/api/admin`. Hostinger cron command format (needs `curl`, not a bare URL —
+cron doesn't know what to do with a URL on its own):
+```
+curl "https://checkout-rexxpay.onrender.com/api/admin/cron/<route>?adminKey=YOUR_INFRA_ADMIN_KEY"
+```
+
+`scripts/reconcile.js` is deliberately **not** in this list — see "Known
+gaps" below.
+
+## Known gaps (found during Aug 2026 ops session, not yet fixed)
+
+- **`deactivateVirtualAccount()` doesn't tell RexxPay Bank.** In
+  `virtualAccount.service.js`, the function called right after a
+  successful payment (`webhook.processor.js`) only flips `status` in
+  SwiftPay's own Mongo doc — unlike its siblings (`releaseVirtualAccount`,
+  `releaseStaleAssignedAccounts`, `reactivateExpiredAccounts`), it never
+  calls `deactivateBankPoolAccount(accountNumber)`. Net effect: RexxPay
+  Bank still considers the account open after a completed payment, so a
+  second transfer to the same account number is silently accepted by the
+  bank instead of failing the way "beneficiary not found" does on
+  Paystack-style flows. **Fix**: add the same
+  `if (isLive(account)) { await deactivateBankPoolAccount(account.accountNumber); }`
+  block the other three functions already have.
+- **That same call 404s in production even where it exists.**
+  `[bankPartner] failed to deactivate account 1074337293 on RexxPay Bank:
+  Request failed with status code 404` was observed live. Root cause not
+  yet confirmed — needs checking RexxPay Bank's own
+  `pool-accounts/:accountNumber/deactivate` route (does it 404 because
+  RexxPay Bank already auto-deactivates on deposit and the account no
+  longer matches whatever status the route filters on, or is it an
+  account-number/routing mismatch).
+- **Amounts aren't enforced by the bank.** `assignVirtualAccount()` stores
+  `amountExpected` only in SwiftPay's own DB; RexxPay Bank's
+  account-provisioning API has no `expectedAmount` field, so it can never
+  reject a mismatched transfer at the banking layer the way some real BaaS
+  partners (Providus, Wema, etc.) do. SwiftPay's `partial`/`over` status
+  logic in `transaction.service.js` is therefore the *only* safeguard —
+  correct as a fallback, but not a substitute for bank-level enforcement
+  if that's ever wanted.
+- **`reconcile.js` has no automated input.** It expects a settlement JSON
+  file on disk; nothing currently fetches that from RexxPay Bank
+  automatically. Needs RexxPay Bank to expose either an endpoint SwiftPay
+  can pull from, or a scheduled export SwiftPay can fetch — until then
+  this stays a manual, ad hoc script run.
+- **Invoices have no push notification.** `markInvoicePaidByTransaction()`
+  and `generateDueInvoices()`/`markOverdueInvoices()` update `Invoice`
+  records silently — unlike `transaction.success`, there's no
+  `dispatchMerchantWebhook()` call for `invoice.created`/`invoice.paid`/
+  `invoice.overdue`. Merchants currently only see invoice state by
+  checking the dashboard (`dashboard.js` → `GET
+  /api/subscriptions/invoices`) or polling the API themselves.
 
 ## Testing the full flow locally
 
@@ -302,6 +402,11 @@ note in `app.js`; not a permanent second contract).
 - PATCH /api/v1/admin/merchants/:id/fees  (per-merchant fee override; never merchant-settable)
 - POST  /api/v1/admin/settlement/run  (`?currency=`, forces a settlement cycle now — the scheduled trigger is `npm run run-settlement`)
 - GET   /api/v1/admin/settlement/batches  (`?currency=&phase=&limit=`, inspect recent settlement batches)
+- GET   /api/v1/admin/cron/release-stale-accounts  (`?adminKey=`; mirrors `scripts/release-stale-accounts.js`, meant to be hit by an external scheduler — see "Production Setup")
+- GET   /api/v1/admin/cron/reactivate-expired-accounts  (`?adminKey=`; mirrors `scripts/reactivate-expired-accounts.js`)
+- GET   /api/v1/admin/cron/auto-provision-pool  (`?adminKey=&threshold=&topUpCount=`; mirrors `scripts/auto-provision-pool.js`)
+- GET   /api/v1/admin/cron/run-settlement  (`?adminKey=&currencies=NGN,USD`; mirrors `scripts/run-settlement.js`)
+- GET   /api/v1/admin/cron/generate-invoices  (`?adminKey=`; mirrors `scripts/generate-invoices.js`)
 
 ### Demo (public — no signup, no API key)
 - POST /api/v1/demo/checkout  (runs a full test-mode checkout — virtual account → simulated bank transfer → success — against one dedicated demo merchant; rate-limited, capped at `DEMO_MAX_AMOUNT_MINOR`)
