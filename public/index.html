@@ -469,118 +469,505 @@ ul { list-style: none; }
   <div class="footer-bottom">
     <span>©️ 2026 RexxPay. All rights reserved.</span>
   </div>
-
-  <!-- JQUERY & JS -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-
   <script>
+document.addEventListener("DOMContentLoaded", function () {
 
+  /* =====================================================
+     HAMBURGER MENU
+  ===================================================== */
 
-$(document).ready(function() {
+  const menuIcon = document.getElementById("menuIcon");
+  const navLinks = document.getElementById("navLinks");
 
-  // ===== HAMBURGER MENU TOGGLE =====
-  $('#menuIcon').click(function () {
-    $(this).toggleClass('active');
-    $('#navLinks').toggleClass('active');
-  });
+  if (menuIcon && navLinks) {
 
-  // ===== CLOSE MENU ON MOBILE WHEN LINK CLICKED =====
-  $('#navLinks a').click(function () {
-    if ($('.menu-icon').is(':visible')) {
-      $('#navLinks').removeClass('active');
-      $('#menuIcon').removeClass('active');
-    }
-  });
+    menuIcon.addEventListener("click", function (event) {
+      event.stopPropagation();
 
-    // Close mobile menu if click outside
-  $(document).click(function (event) {
-    if (!$(event.target).closest('#navLinks, #menuIcon').length) {
-      if ($('#navLinks').hasClass('active')) {
-        $('#navLinks').removeClass('active');
-        $('#menuIcon').removeClass('active');
-      }
-    }
-  });
-
-  // ===== SMOOTH SCROLL FOR ANCHOR LINKS =====
-  $('a[href^="#"]').click(function(e){
-    e.preventDefault();
-    var target = $(this).attr('href');
-    if(target !== "#" && $(target).length) {
-      $('html, body').animate({
-        scrollTop: $(target).offset().top - 60 // navbar offset
-      }, 600);
-    }
-  });
-
-  // ===== DEVELOPER SECTION CODE SAMPLES =====
-  const codeSamples = {
-    CURL: 'curl -X POST https://api.example.com',
-    Node: 'const api = require("api");\napi.sendPayment();',
-    Dotnet: 'var api = new ApiClient();\napi.SendPayment();',
-    Python: 'import api\napi.send_payment()'
-  };
-
-  // Show default code (CURL) on page load
-  $('.code-content').text(codeSamples.CURL);
-  $('.bodychild1in1 button').removeClass('active-btn');
-  $('.bodychild1in1 button[data-lang="CURL"]').addClass('active-btn');
-
-  // ===== BUTTON CLICK TO SWITCH CODE =====
-  $('.bodychild1in1 button').click(function(){
-    const lang = $(this).data('lang');     // get the language
-    const code = codeSamples[lang];        // get code
-
-    // update code box
-    $('.code-content').text(code);
-
-    // update active button style
-    $('.bodychild1in1 button').removeClass('active-btn');
-    $(this).addClass('active-btn');
-  });
-
-  // ===== COPY BUTTON =====
-  $('.copy-btn').click(function(){
-    const code = $('.code-content').text().trim();
-    if(!code) return;
-
-    navigator.clipboard.writeText(code).then(() => {
-      const btn = $(this);
-      btn.text('Copied ✓');
-      setTimeout(()=>{ btn.text('Copy'); }, 1500);
+      menuIcon.classList.toggle("active");
+      navLinks.classList.toggle("active");
     });
-  });
 
-  // ===== CONTACT FORM RESET AND SUCCESS MESSAGE =====
-  $('.body7only2 button').click(function() {
-    const form = $(this).closest('form');
+    // Close menu when navigation link is clicked
+    navLinks.querySelectorAll("a").forEach(function (link) {
 
-    // Optional: process data first
-    // ...
+      link.addEventListener("click", function () {
 
-    // Clear all inputs
-    form[0].reset();
-
-    // Show message
-    const msgDiv = form.find('.form-message');
-    msgDiv.text("Request submitted successfully ✅").fadeIn();
-
-    // Hide message after 3 seconds
-    setTimeout(() => { msgDiv.fadeOut(); }, 3000);
-  });
-
-
-
-   $('.pricing-btn').on('click', function () {
-        const plan = $(this).data('plan');
-        localStorage.setItem('selectedPlan', plan);
+        menuIcon.classList.remove("active");
+        navLinks.classList.remove("active");
 
       });
 
-  // ===== UPDATE FOOTER YEAR DYNAMICALLY =====
-  $('.footer-bottom span').text(`©️ ${new Date().getFullYear()} RexxPay. All rights reserved.`);
+    });
+
+    // Close menu when clicking outside
+    document.addEventListener("click", function (event) {
+
+      if (
+        !navLinks.contains(event.target) &&
+        !menuIcon.contains(event.target)
+      ) {
+
+        navLinks.classList.remove("active");
+        menuIcon.classList.remove("active");
+
+      }
+
+    });
+
+  }
+
+
+  /* =====================================================
+     SMOOTH SCROLL
+  ===================================================== */
+
+  document.querySelectorAll('a[href^="#"]').forEach(function (link) {
+
+    link.addEventListener("click", function (event) {
+
+      const targetId = this.getAttribute("href");
+
+      if (!targetId || targetId === "#") {
+        return;
+      }
+
+      const target = document.querySelector(targetId);
+
+      if (target) {
+
+        event.preventDefault();
+
+        const navbarHeight = 64;
+
+        const targetPosition =
+          target.getBoundingClientRect().top +
+          window.pageYOffset -
+          navbarHeight;
+
+        window.scrollTo({
+          top: targetPosition,
+          behavior: "smooth"
+        });
+
+      }
+
+    });
+
+  });
+
+
+  /* =====================================================
+     DEVELOPER CODE SAMPLES
+  ===================================================== */
+
+  const codeSamples = {
+
+    CURL: `curl -X POST https://api.rexxpay.com/api/v1/payments \\
+  -H "Authorization: Bearer YOUR_SECRET_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "amount": 5000,
+    "currency": "NGN",
+    "email": "customer@example.com",
+    "reference": "ORDER-12345"
+  }'`,
+
+    Node: `const axios = require("axios");
+
+const response = await axios.post(
+  "https://api.rexxpay.com/api/v1/payments",
+  {
+    amount: 5000,
+    currency: "NGN",
+    email: "customer@example.com",
+    reference: "ORDER-12345"
+  },
+  {
+    headers: {
+      Authorization: "Bearer YOUR_SECRET_KEY",
+      "Content-Type": "application/json"
+    }
+  }
+);
+
+console.log(response.data);`,
+
+    Dotnet: `using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+
+var client = new HttpClient();
+
+client.DefaultRequestHeaders.Add(
+    "Authorization",
+    "Bearer YOUR_SECRET_KEY"
+);
+
+var payload = new
+{
+    amount = 5000,
+    currency = "NGN",
+    email = "customer@example.com",
+    reference = "ORDER-12345"
+};
+
+var json = JsonSerializer.Serialize(payload);
+
+var content = new StringContent(
+    json,
+    Encoding.UTF8,
+    "application/json"
+);
+
+var response = await client.PostAsync(
+    "https://api.rexxpay.com/api/v1/payments",
+    content
+);
+
+Console.WriteLine(
+    await response.Content.ReadAsStringAsync()
+);`,
+
+    Python: `import requests
+
+url = "https://api.rexxpay.com/api/v1/payments"
+
+headers = {
+    "Authorization": "Bearer YOUR_SECRET_KEY",
+    "Content-Type": "application/json"
+}
+
+data = {
+    "amount": 5000,
+    "currency": "NGN",
+    "email": "customer@example.com",
+    "reference": "ORDER-12345"
+}
+
+response = requests.post(
+    url,
+    headers=headers,
+    json=data
+)
+
+print(response.json())`
+
+  };
+
+
+  /* =====================================================
+     CODE DISPLAY
+  ===================================================== */
+
+  const codeContent =
+    document.querySelector(".code-content");
+
+  const copyButton =
+    document.querySelector(".copy-btn");
+
+  const languageButtons =
+    document.querySelectorAll(
+      ".bodychild1in1 button[data-lang]"
+    );
+
+
+  /* =====================================================
+     DISPLAY DEFAULT CURL CODE
+  ===================================================== */
+
+  if (codeContent) {
+
+    codeContent.textContent = codeSamples.CURL;
+
+  }
+
+
+  /* =====================================================
+     SET CURL AS ACTIVE
+  ===================================================== */
+
+  const curlButton =
+    document.querySelector(
+      '.bodychild1in1 button[data-lang="CURL"]'
+    );
+
+  if (curlButton) {
+
+    curlButton.classList.add("active-btn");
+
+  }
+
+
+  /* =====================================================
+     CHANGE PROGRAMMING LANGUAGE
+  ===================================================== */
+
+  languageButtons.forEach(function (button) {
+
+    button.addEventListener("click", function () {
+
+      const language =
+        this.getAttribute("data-lang");
+
+      const code =
+        codeSamples[language];
+
+      if (!code) {
+
+        console.error(
+          "Code sample not found for:",
+          language
+        );
+
+        return;
+
+      }
+
+      if (codeContent) {
+
+        codeContent.textContent = code;
+
+      }
+
+      // Remove active state from all buttons
+      languageButtons.forEach(function (btn) {
+
+        btn.classList.remove("active-btn");
+
+      });
+
+      // Activate selected button
+      this.classList.add("active-btn");
+
+    });
+
+  });
+
+
+  /* =====================================================
+     COPY CODE
+  ===================================================== */
+
+  if (copyButton) {
+
+    copyButton.addEventListener(
+      "click",
+      async function () {
+
+        if (!codeContent) {
+          return;
+        }
+
+        const code =
+          codeContent.textContent.trim();
+
+        if (!code) {
+          return;
+        }
+
+        try {
+
+          await navigator.clipboard.writeText(code);
+
+          this.textContent = "Copied ✓";
+
+          const button = this;
+
+          setTimeout(function () {
+
+            button.textContent = "Copy";
+
+          }, 1500);
+
+        } catch (error) {
+
+          console.error(
+            "Unable to copy code:",
+            error
+          );
+
+          // Fallback for older browsers
+          const textArea =
+            document.createElement("textarea");
+
+          textArea.value = code;
+
+          textArea.style.position = "fixed";
+          textArea.style.left = "-999999px";
+          textArea.style.top = "-999999px";
+
+          document.body.appendChild(textArea);
+
+          textArea.focus();
+          textArea.select();
+
+          try {
+
+            document.execCommand("copy");
+
+            this.textContent = "Copied ✓";
+
+          } catch (fallbackError) {
+
+            console.error(
+              "Fallback copy failed:",
+              fallbackError
+            );
+
+            this.textContent = "Copy failed";
+
+          }
+
+          document.body.removeChild(textArea);
+
+          const button = this;
+
+          setTimeout(function () {
+
+            button.textContent = "Copy";
+
+          }, 1500);
+
+        }
+
+      }
+    );
+
+  }
+
+
+  /* =====================================================
+     CONTACT FORM
+  ===================================================== */
+
+  const contactForm =
+    document.querySelector(".body7only2 form");
+
+  if (contactForm) {
+
+    const submitButton =
+      contactForm.querySelector(
+        'button[type="button"]'
+      );
+
+    const message =
+      contactForm.querySelector(".form-message");
+
+
+    if (submitButton) {
+
+      submitButton.addEventListener(
+        "click",
+        function () {
+
+          // Reset form
+          contactForm.reset();
+
+          // Show success message
+          if (message) {
+
+            message.textContent =
+              "Request submitted successfully ✅";
+
+            message.style.display = "block";
+
+            setTimeout(function () {
+
+              message.style.display = "none";
+
+            }, 3000);
+
+          }
+
+        }
+      );
+
+    }
+
+  }
+
+
+  /* =====================================================
+     PRICING PLAN SELECTION
+  ===================================================== */
+
+  const pricingButtons =
+    document.querySelectorAll(".pricing-btn");
+
+  pricingButtons.forEach(function (button) {
+
+    button.addEventListener("click", function () {
+
+      const href =
+        this.getAttribute("href");
+
+      if (!href) {
+        return;
+      }
+
+      try {
+
+        const url =
+          new URL(
+            href,
+            window.location.origin
+          );
+
+        const plan =
+          url.searchParams.get("plan");
+
+        if (plan) {
+
+          localStorage.setItem(
+            "selectedPlan",
+            plan
+          );
+
+        }
+
+      } catch (error) {
+
+        console.error(
+          "Unable to read pricing plan:",
+          error
+        );
+
+      }
+
+    });
+
+  });
+
+
+  /* =====================================================
+     FOOTER YEAR
+  ===================================================== */
+
+  const footerText =
+    document.querySelector(
+      ".footer-bottom span"
+    );
+
+  if (footerText) {
+
+    footerText.textContent =
+      `©️ ${new Date().getFullYear()} RexxPay. All rights reserved.`;
+
+  }
+
+
+  /* =====================================================
+     DEBUG MESSAGE
+  ===================================================== */
+
+  console.log(
+    "RexxPay frontend JavaScript loaded successfully."
+  );
 
 });
   </script>
+
+  
 </body>
 </html>
