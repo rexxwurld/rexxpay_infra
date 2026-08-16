@@ -2,53 +2,55 @@
 const Wallet = require('./wallet.model');
 const { normalizeCurrency } = require('../../config/currencies');
 
-async function getOrCreateWallet(merchantId, currency = 'NGN', session = null) {
+// `mode` defaults to 'test' everywhere in this file, NOT 'live'. If a
+// caller ever forgets to pass mode explicitly, it should fail closed
+// into an empty test wallet (insufficient_balance) rather than silently
+// reading/writing real money.
+function normalizeMode(mode) {
+  return mode === 'live' ? 'live' : 'test';
+}
+
+async function getOrCreateWallet(merchantId, currency = 'NGN', mode = 'test', session = null) {
   const cur = normalizeCurrency(currency);
-  let wallet = await Wallet.findOne({ merchant: merchantId, currency: cur }).session(session);
+  const m = normalizeMode(mode);
+  let wallet = await Wallet.findOne({ merchant: merchantId, currency: cur, mode: m }).session(session);
   if (!wallet) {
-    const created = await Wallet.create([{ merchant: merchantId, balance: 0, currency: cur }], { session });
+    const created = await Wallet.create([{ merchant: merchantId, balance: 0, currency: cur, mode: m }], { session });
     wallet = created[0];
   }
   return wallet;
 }
 
-async function listWallets(merchantId) {
-  return Wallet.find({ merchant: merchantId }).sort({ currency: 1 });
+// mode = null means "every mode" - used by dashboard views that show
+// both test and live wallets together, tagged by their own `mode` field.
+async function listWallets(merchantId, mode = null) {
+  const query = { merchant: merchantId };
+  if (mode) query.mode = normalizeMode(mode);
+  return Wallet.find(query).sort({ currency: 1, mode: 1 });
 }
 
-// Atomic increment so concurrent webhook deliveries can't race each other
-// and lose an update (classic "read balance, add, write balance" bug).
-// `balance` here is a fast-read CACHE of the AVAILABLE balance - the
-// LedgerEntry rows in the ledger module are the source of truth. Callers
-// that move money should write both in the same session (see
-// transaction.service / payout.service).
-//
-// NOTE: this credits the AVAILABLE balance directly and bypasses
-// settlement. Only use it for movements that are available immediately
-// by definition (e.g. a payout reversal giving money straight back).
-// Money from an inbound customer payment should go through
-// creditPendingSettlement instead - see settlement/settlement.service.js.
-async function creditWallet(merchantId, amountMinorUnits, session = null, currency = 'NGN') {
+async function creditWallet(merchantId, amountMinorUnits, session = null, currency = 'NGN', mode = 'test') {
   if (!Number.isInteger(amountMinorUnits) || amountMinorUnits <= 0) {
     throw new Error('invalid_credit_amount');
   }
   const cur = normalizeCurrency(currency);
-  await getOrCreateWallet(merchantId, cur, session);
+  const m = normalizeMode(mode);
+  await getOrCreateWallet(merchantId, cur, m, session);
   return Wallet.findOneAndUpdate(
-    { merchant: merchantId, currency: cur },
+    { merchant: merchantId, currency: cur, mode: m },
     { $inc: { balance: amountMinorUnits } },
     { new: true, session }
   );
 }
 
-async function debitWallet(merchantId, amountMinorUnits, session = null, currency = 'NGN') {
+async function debitWallet(merchantId, amountMinorUnits, session = null, currency = 'NGN', mode = 'test') {
   if (!Number.isInteger(amountMinorUnits) || amountMinorUnits <= 0) {
     throw new Error('invalid_debit_amount');
   }
   const cur = normalizeCurrency(currency);
-  // Only debit if sufficient balance exists (prevents negative balances)
+  const m = normalizeMode(mode);
   const wallet = await Wallet.findOneAndUpdate(
-    { merchant: merchantId, currency: cur, balance: { $gte: amountMinorUnits } },
+    { merchant: merchantId, currency: cur, mode: m, balance: { $gte: amountMinorUnits } },
     { $inc: { balance: -amountMinorUnits } },
     { new: true, session }
   );
@@ -56,43 +58,24 @@ async function debitWallet(merchantId, amountMinorUnits, session = null, currenc
   return wallet;
 }
 
-/*
-|--------------------------------------------------------------------------
-| SETTLEMENT-STATE-AWARE MOVEMENTS
-|--------------------------------------------------------------------------
-|
-| These four functions are the only supported ways money should move
-| between the three balance buckets on a wallet:
-|
-|   pendingSettlementBalance --(settle)--> balance (available)
-|   balance (available) --(reserve)--> reservedBalance --(finalize)--> gone
-|                                       reservedBalance --(release)--> balance
-|
-| Every one of them requires a session and is a single atomic
-| findOneAndUpdate with a guard condition, so two concurrent calls can
-| never both succeed against the same insufficient bucket.
-*/
-
-// Inbound payment confirmed, but not yet past the settlement cutoff.
-// This is what transaction.service should call instead of creditWallet
-// when a payment is first recorded.
-async function creditPendingSettlement(merchantId, amountMinorUnits, session, currency = 'NGN') {
+async function creditPendingSettlement(merchantId, amountMinorUnits, session, currency = 'NGN', mode = 'test') {
   if (!session) throw new Error('wallet_requires_session');
   if (!Number.isInteger(amountMinorUnits) || amountMinorUnits <= 0) {
     throw new Error('invalid_credit_amount');
   }
   const cur = normalizeCurrency(currency);
-  await getOrCreateWallet(merchantId, cur, session);
+  const m = normalizeMode(mode);
+  await getOrCreateWallet(merchantId, cur, m, session);
   return Wallet.findOneAndUpdate(
-    { merchant: merchantId, currency: cur },
+    { merchant: merchantId, currency: cur, mode: m },
     { $inc: { pendingSettlementBalance: amountMinorUnits } },
     { new: true, session }
   );
 }
 
-// Moves money that has cleared the settlement cutoff out of
-// pendingSettlementBalance and into the available balance. Called by
-// settlement.service, never directly by payment/payout code.
+// Unchanged below - these operate on a walletId that's already scoped
+// to a specific mode, so there's nothing to thread through.
+
 async function moveToAvailable(walletId, amountMinorUnits, session) {
   if (!session) throw new Error('wallet_requires_session');
   if (!Number.isInteger(amountMinorUnits) || amountMinorUnits <= 0) {
@@ -107,18 +90,15 @@ async function moveToAvailable(walletId, amountMinorUnits, session) {
   return wallet;
 }
 
-// Earmarks funds for an in-flight payout: moves them out of the
-// available balance into reservedBalance. Only allowed from AVAILABLE
-// balance, never from pendingSettlementBalance - unsettled money can't
-// be paid out, which is the entire point of having settlement states.
-async function reserveFunds(merchantId, amountMinorUnits, session, currency = 'NGN') {
+async function reserveFunds(merchantId, amountMinorUnits, session, currency = 'NGN', mode = 'test') {
   if (!session) throw new Error('wallet_requires_session');
   if (!Number.isInteger(amountMinorUnits) || amountMinorUnits <= 0) {
     throw new Error('invalid_reserve_amount');
   }
   const cur = normalizeCurrency(currency);
+  const m = normalizeMode(mode);
   const wallet = await Wallet.findOneAndUpdate(
-    { merchant: merchantId, currency: cur, balance: { $gte: amountMinorUnits } },
+    { merchant: merchantId, currency: cur, mode: m, balance: { $gte: amountMinorUnits } },
     { $inc: { balance: -amountMinorUnits, reservedBalance: amountMinorUnits } },
     { new: true, session }
   );
@@ -126,8 +106,6 @@ async function reserveFunds(merchantId, amountMinorUnits, session, currency = 'N
   return wallet;
 }
 
-// Payout confirmed sent by the bank - the reservation is consumed for
-// real; the money has actually left.
 async function finalizeReservedDebit(walletId, amountMinorUnits, session) {
   if (!session) throw new Error('wallet_requires_session');
   if (!Number.isInteger(amountMinorUnits) || amountMinorUnits <= 0) {
@@ -142,8 +120,6 @@ async function finalizeReservedDebit(walletId, amountMinorUnits, session) {
   return wallet;
 }
 
-// Payout failed/reversed - give the reservation back to the available
-// balance so the merchant can spend or retry with it.
 async function releaseReservedFunds(walletId, amountMinorUnits, session) {
   if (!session) throw new Error('wallet_requires_session');
   if (!Number.isInteger(amountMinorUnits) || amountMinorUnits <= 0) {
