@@ -97,16 +97,19 @@ function renderPoolTable(rows) {
 
   const LOW_THRESHOLD = 20; // mirrors POOL_MIN_THRESHOLD default - display only
 
+  // Only the LIVE pool is a real operational resource - test accounts
+  // are generated on demand for free (see provisionAccountPool), so
+  // "low" only ever applies to live.
   body.innerHTML = rows.map((r) => {
-    const total = r.available + r.assigned;
-    const low = r.available <= LOW_THRESHOLD;
+    const low = r.live.available <= LOW_THRESHOLD;
     return `
       <tr>
         <td class="mono">${r.bank}</td>
-        <td class="mono">${r.available}</td>
-        <td class="mono">${r.assigned}</td>
-        <td class="mono">${total}</td>
+        <td class="mono">${r.live.available}</td>
+        <td class="mono">${r.live.assigned}</td>
         <td><span class="pill ${low ? 'low' : 'ok'}">${low ? 'Low' : 'Healthy'}</span></td>
+        <td class="mono">${r.test.available}</td>
+        <td class="mono">${r.test.assigned}</td>
       </tr>
     `;
   }).join('');
