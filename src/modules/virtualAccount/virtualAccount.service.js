@@ -5,8 +5,43 @@ const BankPartner = require('../bankPartner/bankPartner.model');
 const Customer = require('../customer/customer.model');
 const { provisionAccountPool, assignBankPoolAccount, deactivateBankPoolAccount, releaseBankPoolAccount } = require('../bankPartner/bankPartner.service');
 const { findActiveByCodeForMerchant } = require('../subaccount/subaccount.service');
+const generateAccountNumber = require('../../utils/generateAccountNumber');
 
 const ACCOUNT_COOLDOWN_MINUTES = 60;
+
+// Test-mode accounts are fake numbers with no real bank behind them, so
+// there's no reason to make callers contend over a finite pool the way
+// live accounts must. Instead of pulling from `status: 'available'`,
+// every test-mode assignment mints a brand-new, disposable account
+// number on the spot - unlimited, instantly available, and immune to
+// pool exhaustion under concurrent load. This mirrors how Paystack /
+// Flutterwave test-mode dedicated virtual accounts behave: unique per
+// request, never shared, never contended.
+//
+// Uniqueness is enforced at the DB level (accountNumber has a unique
+// index) - on the astronomically unlikely chance of a random collision,
+// this just retries with a new random number.
+async function mintTestVirtualAccount({ bank }) {
+  const MAX_ATTEMPTS = 5;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    try {
+      return await VirtualAccount.create({
+        accountNumber: generateAccountNumber(),
+        bank: bank._id,
+        mode: 'test',
+        status: 'available', // caller immediately overwrites this to 'assigned'
+      });
+    } catch (err) {
+      if (err.code === 11000 && attempt < MAX_ATTEMPTS - 1) {
+        continue; // duplicate accountNumber, extremely unlikely - retry
+      }
+      throw err;
+    }
+  }
+
+  throw new Error('failed_to_generate_unique_test_account_number');
+}
 
 function generateCheckoutToken() {
   return crypto.randomBytes(32).toString('hex');
@@ -55,12 +90,13 @@ async function assignVirtualAccount({
   }
 
   let bankFilter = {};
+  let preferredBank = null;
   if (preferredBankSlug) {
-    const bank = await BankPartner.findOne({ slug: preferredBankSlug });
-    if (!bank) {
+    preferredBank = await BankPartner.findOne({ slug: preferredBankSlug });
+    if (!preferredBank) {
       throw new Error('unknown_bank_partner');
     }
-    bankFilter = { bank: bank._id };
+    bankFilter = { bank: preferredBank._id };
   }
 
   const checkoutToken = generateCheckoutToken();
@@ -78,28 +114,44 @@ async function assignVirtualAccount({
     splitPercentage: resolvedSplitPercentage,
   };
 
-  // Pool accounts are grabbed only from the SAME mode as the request -
-  // a live checkout can never be handed a fake test account, and a test
-  // checkout can never be handed a real bank-backed one.
-  let account = await VirtualAccount.findOneAndUpdate(
-    { status: 'available', mode: resolvedMode, ...bankFilter },
-    assignment,
-    { new: true }
-  ).populate('bank');
+  let account;
 
-  if (!account) {
-    const bankSlug = preferredBankSlug || 'rexxpay-bank';
-    await provisionAccountPool(bankSlug, 20, resolvedMode);
+  if (resolvedMode === 'test') {
+    // No pool, no contention: mint a fresh disposable test account and
+    // assign it in the same step. Never runs out, never waits on a
+    // top-up, never collides with another concurrent test checkout.
+    const bank = preferredBank || (await BankPartner.findOne({ slug: 'rexxpay-bank' }));
+    if (!bank) {
+      throw new Error('unknown_bank_partner');
+    }
 
+    account = await mintTestVirtualAccount({ bank });
+    Object.assign(account, assignment);
+    await account.save();
+    await account.populate('bank');
+  } else {
+    // Live accounts are real bank-backed resources, so they still come
+    // from the finite, pre-provisioned pool.
     account = await VirtualAccount.findOneAndUpdate(
       { status: 'available', mode: resolvedMode, ...bankFilter },
       assignment,
       { new: true }
     ).populate('bank');
-  }
 
-  if (!account) {
-    throw new Error('no_accounts_available');
+    if (!account) {
+      const bankSlug = preferredBankSlug || 'rexxpay-bank';
+      await provisionAccountPool(bankSlug, 20, resolvedMode);
+
+      account = await VirtualAccount.findOneAndUpdate(
+        { status: 'available', mode: resolvedMode, ...bankFilter },
+        assignment,
+        { new: true }
+      ).populate('bank');
+    }
+
+    if (!account) {
+      throw new Error('no_accounts_available');
+    }
   }
 
   customer.virtualAccount = account._id;
