@@ -26,10 +26,12 @@ router.get('/provision-pool', requireAdminKey, async (req, res) => {
   try {
     const bankSlug = req.query.bankSlug || 'rexxpay-bank';
     const count = Math.min(parseInt(req.query.count, 10) || 20, 500); // hard cap per call
-    const mode = req.query.mode === 'live' ? 'live' : 'test'; // must opt into live explicitly
 
+    // Only the live pool can be provisioned here - test-mode accounts
+    // are minted on demand per checkout and are never pre-provisioned
+    // (see provisionAccountPool in bankPartner.service.js).
     await ensureDefaultBankPartners();
-    await provisionAccountPool(bankSlug, count, mode);
+    await provisionAccountPool(bankSlug, count, 'live');
 
     const available = await VirtualAccount.countDocuments({ status: 'available' });
     const assigned = await VirtualAccount.countDocuments({ status: 'assigned' });
