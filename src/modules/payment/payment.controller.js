@@ -6,9 +6,10 @@ async function initialize(req, res) {
     const { amount, customer, tx_ref, redirect_url } = req.body;
     const baseUrl = `${req.protocol}://${req.get('host')}`;
 
-    if (req.merchant.mode !== 'test' && req.merchant.mode !== 'live') {
-      return res.status(401).json({ status: false, message: 'api_key_required_for_payments' });
-    }
+    // Session-authenticated dashboard requests have mode === null.
+    // Default them to test mode, same as Paystack/Flutterwave dashboards
+    // do until a merchant is verified/activated for live payments.
+    const mode = req.merchant.mode || 'test';
 
     const result = await initializePayment({
       merchantId: req.merchant.id,
@@ -17,7 +18,7 @@ async function initialize(req, res) {
       tx_ref,
       redirect_url,
       baseUrl,
-      mode: req.merchant.mode,
+      mode,
     });
     res.status(201).json({ status: true, data: result });
   } catch (err) {
