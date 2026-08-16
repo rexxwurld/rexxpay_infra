@@ -2,46 +2,19 @@ const mongoose = require('mongoose');
 
 const virtualAccountSchema = new mongoose.Schema(
   {
-    accountNumber: {
-      type: String,
-      required: true,
-      unique: true,
-    },
+    accountNumber: { type: String, required: true, unique: true },
+    bank: { type: mongoose.Schema.Types.ObjectId, ref: 'BankPartner', required: true },
+    merchant: { type: mongoose.Schema.Types.ObjectId, ref: 'Merchant', default: null },
+    customer: { type: mongoose.Schema.Types.ObjectId, ref: 'Customer', default: null },
 
-    bank: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'BankPartner',
-      required: true,
-    },
+    // Whether this account number is a REAL RexxPay Bank wallet ('live')
+    // or a locally-generated fake number that never touches the real
+    // bank ('test'). Set once, at provisioning time, and never changed -
+    // an account's identity as real-vs-fake money doesn't change over
+    // its lifecycle. Defaults to 'live' so pre-existing accounts (all
+    // of which were real before this field existed) keep working.
+    mode: { type: String, enum: ['test', 'live'], required: true, default: 'live', index: true },
 
-    merchant: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Merchant',
-      default: null,
-    },
-
-    customer: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Customer',
-      default: null,
-    },
-
-    /*
-    |--------------------------------------------------------------------------
-    | ACCOUNT LIFECYCLE
-    |--------------------------------------------------------------------------
-    |
-    | available:
-    |   Account is in the pool and can be assigned.
-    |
-    | assigned:
-    |   Account is currently assigned to an active payment.
-    |
-    | deactivated:
-    |   Payment has completed. Account is temporarily disabled and cannot
-    |   be assigned again until cooldownUntil expires.
-    |
-    */
     status: {
       type: String,
       enum: ['available', 'assigned', 'deactivated'],
@@ -49,56 +22,15 @@ const virtualAccountSchema = new mongoose.Schema(
       index: true,
     },
 
-    assignedAt: {
-      type: Date,
-      default: null,
-    },
+    assignedAt: { type: Date, default: null },
+    deactivatedAt: { type: Date, default: null },
+    cooldownUntil: { type: Date, default: null, index: true },
 
-    /*
-    |--------------------------------------------------------------------------
-    | COOLDOWN
-    |--------------------------------------------------------------------------
-    |
-    | After a successful payment, the account enters `deactivated` state.
-    | This timestamp determines when it can safely return to the pool.
-    |
-    */
-    deactivatedAt: {
-      type: Date,
-      default: null,
-    },
+    amountExpected: { type: Number, default: null },
+    reference: { type: String, default: null },
 
-    cooldownUntil: {
-      type: Date,
-      default: null,
-      index: true,
-    },
-
-    // Fixed amount expected for this checkout.
-    // Stored in minor units (kobo).
-    amountExpected: {
-      type: Number,
-      default: null,
-    },
-
-    // Merchant's own transaction/order reference.
-    // This stays server-side and is NOT used in the checkout URL.
-    reference: {
-      type: String,
-      default: null,
-    },
-
-    // Optional split payment configuration for this checkout.
-    splitSubaccount: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Subaccount',
-      default: null,
-    },
-
-    splitPercentage: {
-      type: Number,
-      default: null,
-    },
+    splitSubaccount: { type: mongoose.Schema.Types.ObjectId, ref: 'Subaccount', default: null },
+    splitPercentage: { type: Number, default: null },
   },
   { timestamps: true }
 );
