@@ -30,6 +30,7 @@
     --blue-bg: #dbeafe;
     --mono: 'JetBrains Mono', ui-monospace, monospace;
     --sans: 'Inter', system-ui, sans-serif;
+    --sidebar-w: 220px;
   }
 
   * { box-sizing: border-box; }
@@ -100,9 +101,71 @@
   .btn-sm { padding: 6px 12px; font-size: 12.5px; }
   .btn-danger-outline { border-color: var(--red); color: var(--red); background: var(--white); }
   .btn-danger-outline:hover { background: var(--red-bg); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
 
   /* ---------- Shell / layout ---------- */
-  .dash-shell { max-width: 1160px; margin: 0 auto; padding: 28px 24px 64px; }
+  .dash-body { display: flex; align-items: flex-start; max-width: 1320px; margin: 0 auto; }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    width: var(--sidebar-w);
+    flex: none;
+    position: sticky;
+    top: 53px;
+    height: calc(100vh - 53px);
+    overflow-y: auto;
+    padding: 20px 12px 40px;
+    border-right: 1px solid var(--line);
+  }
+  .sidebar-group { margin-bottom: 18px; }
+  .sidebar-label {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    padding: 0 12px;
+    margin-bottom: 6px;
+  }
+  .side-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink-dim);
+    background: none;
+    border: none;
+    border-radius: 8px;
+    padding: 9px 12px;
+    cursor: pointer;
+    margin-bottom: 2px;
+  }
+  .side-link .ic {
+    width: 17px;
+    flex: none;
+    text-align: center;
+    font-size: 14px;
+    opacity: .8;
+  }
+  .side-link:hover { background: var(--sky-lighter); color: var(--sky-darker); }
+  .side-link.active { background: var(--sky-light); color: var(--sky-darker); }
+  .side-link .badge-count {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    background: var(--amber-bg);
+    color: var(--amber);
+    border-radius: 20px;
+    padding: 1px 7px;
+    min-width: 16px;
+    text-align: center;
+  }
+
+  .dash-shell { flex: 1; min-width: 0; padding: 28px 28px 64px; }
 
   .dash-head {
     display: flex;
@@ -116,64 +179,12 @@
     margin: 0;
     font-size: 22px;
     font-weight: 800;
-    display: flex;
-    align-items: center;
-    gap: 10px;
   }
   .dash-head .biz {
     color: var(--ink-dim);
     font-size: 13.5px;
     font-family: var(--mono);
     margin-top: 4px;
-  }
-  .mode-badge {
-    font-family: var(--mono);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: .05em;
-    padding: 4px 10px;
-    border-radius: 20px;
-    background: var(--sky-lighter);
-    color: var(--sky-darker);
-    border: 1px solid var(--sky-light);
-    vertical-align: middle;
-  }
-  .mode-badge.live { background: var(--green-bg); color: var(--green); border-color: #bbf0d0; }
-
-  .mode-toggle {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    padding: 3px;
-    background: var(--sky-lighter);
-    border: 1px solid var(--line);
-    border-radius: 20px;
-  }
-  .mode-toggle button {
-    font-family: var(--mono);
-    font-size: 11.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .05em;
-    padding: 6px 14px;
-    border: none;
-    border-radius: 16px;
-    background: transparent;
-    color: var(--ink-dim);
-    cursor: pointer;
-  }
-  .mode-toggle button.active {
-    background: var(--white);
-    color: var(--sky-darker);
-    box-shadow: 0 1px 3px rgba(15, 33, 51, 0.12);
-  }
-  .mode-toggle button.active.live {
-    color: var(--green);
-  }
-  .mode-toggle-note {
-    font-size: 11.5px;
-    color: var(--ink-dim);
-    margin-top: 6px;
   }
 
   .ledger-tag {
@@ -221,27 +232,6 @@
   .stat .val.blue { color: var(--sky-dark); }
   .stat .sub-note { font-size: 11.5px; color: var(--ink-faint); margin-top: 6px; }
 
-  /* ---------- Section tabs ---------- */
-  .section-tabs {
-    display: flex;
-    gap: 4px;
-    border-bottom: 1px solid var(--line);
-    margin-bottom: 22px;
-  }
-  .section-tab {
-    font-family: var(--sans);
-    font-size: 13.5px;
-    font-weight: 600;
-    color: var(--ink-dim);
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    padding: 10px 6px;
-    margin-right: 20px;
-    cursor: pointer;
-  }
-  .section-tab:hover { color: var(--sky-darker); }
-  .section-tab.active { color: var(--sky-darker); border-bottom-color: var(--sky); }
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
 
@@ -276,7 +266,7 @@
   .inline-form { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
   .field { display: flex; flex-direction: column; gap: 6px; min-width: 180px; flex: 1; }
   .field label { font-size: 12px; color: var(--ink-dim); font-weight: 600; }
-  .field input {
+  .field input, .field select {
     width: 100%;
     background: var(--sky-lighter);
     border: 1px solid var(--line);
@@ -286,7 +276,7 @@
     font-family: var(--sans);
     font-size: 13.5px;
   }
-  .field input:focus { outline: none; border-color: var(--sky); background: var(--white); box-shadow: 0 0 0 3px var(--sky-light); }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--sky); background: var(--white); box-shadow: 0 0 0 3px var(--sky-light); }
 
   /* ---------- Tables ---------- */
   table { width: 100%; border-collapse: collapse; }
@@ -312,11 +302,11 @@
     text-transform: uppercase;
     font-weight: 600;
   }
-  .status-success, .status-successful { background: var(--green-bg); color: var(--green); }
-  .status-pending, .status-processing, .status-partial { background: var(--amber-bg); color: var(--amber); }
-  .status-flagged, .status-failed { background: var(--red-bg); color: var(--red); }
+  .status-success, .status-successful, .status-active, .status-won { background: var(--green-bg); color: var(--green); }
+  .status-pending, .status-processing, .status-partial, .status-open, .status-under_review, .status-past_due { background: var(--amber-bg); color: var(--amber); }
+  .status-flagged, .status-failed, .status-lost { background: var(--red-bg); color: var(--red); }
   .status-over { background: var(--blue-bg); color: var(--blue); }
-  .status-reversed { background: var(--line-soft); color: var(--ink-dim); }
+  .status-reversed, .status-cancelled { background: var(--line-soft); color: var(--ink-dim); }
 
   /* ---------- Chips / search ---------- */
   .chip-row { display: flex; gap: 8px; flex-wrap: wrap; padding: 16px 22px 0; }
@@ -378,6 +368,33 @@
   .key-block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
   .key-block-head .title { font-size: 13.5px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
   .key-block .desc { font-size: 12.5px; color: var(--ink-dim); margin: 0 0 12px; line-height: 1.5; }
+  .mode-tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 3px 9px;
+    border-radius: 20px;
+    background: var(--sky-lighter);
+    color: var(--sky-darker);
+    border: 1px solid var(--sky-light);
+  }
+  .mode-tag.live { background: var(--green-bg); color: var(--green); border-color: #bbf0d0; }
+
+  /* ---------- Empty state (no backend endpoint yet) ---------- */
+  .stub-note {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    background: var(--sky-lighter);
+    border: 1px dashed var(--sky-light);
+    border-radius: 10px;
+    padding: 16px 18px;
+    font-size: 13px;
+    color: var(--ink-dim);
+    line-height: 1.6;
+  }
+  .stub-note .ic { font-size: 16px; flex: none; }
 
   /* ---------- Toast ---------- */
   .toast {
@@ -400,6 +417,23 @@
   .toast.show { opacity: 1; transform: translateY(0); }
   .toast.err { background: var(--red); border-color: var(--red); }
 
+  @media (max-width: 980px) {
+    .dash-body { flex-direction: column; }
+    .sidebar {
+      width: 100%;
+      height: auto;
+      position: static;
+      border-right: none;
+      border-bottom: 1px solid var(--line);
+      padding: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .sidebar-group { margin-bottom: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+    .sidebar-label { display: none; }
+    .side-link { width: auto; }
+  }
   @media (max-width: 860px) {
     .stat-row { grid-template-columns: repeat(2, 1fr); }
     .info-grid { grid-template-columns: 1fr; }
@@ -416,239 +450,505 @@
 <nav class="dash-nav">
   <a href="/" class="brand"><span class="dot"></span>RexxPay</a>
   <div style="display:flex; align-items:center; gap:16px;">
-    <div class="mode-toggle" id="modeToggle" role="group" aria-label="Viewing mode">
-      <button type="button" id="modeToggleTest" data-mode="test">Test</button>
-      <button type="button" id="modeToggleLive" class="live" data-mode="live">Live</button>
-    </div>
     <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
   </div>
 </nav>
 
-<div class="dash-shell">
+<div class="dash-body">
 
-  <div class="dash-head">
-    <div>
-      <h1 id="bizName">—<span class="mode-badge" id="modeBadge">test mode</span></h1>
-      <div class="biz" id="bizEmail"></div>
-      <div class="mode-toggle-note" id="modeToggleNote"></div>
+  <aside class="sidebar">
+    <div class="sidebar-group">
+      <div class="sidebar-label">General</div>
+      <button class="side-link active" data-tab="overview"><span class="ic">&#9679;</span>Overview</button>
+      <button class="side-link" data-tab="transactions"><span class="ic">&#8646;</span>Transactions</button>
+      <button class="side-link" data-tab="customers"><span class="ic">&#9679;</span>Customers</button>
     </div>
-    <div class="ledger-tag"><span class="dot"></span>Balance reconciled from ledger</div>
-  </div>
+    <div class="sidebar-group">
+      <div class="sidebar-label">Money</div>
+      <button class="side-link" data-tab="refunds"><span class="ic">&#8617;</span>Refunds</button>
+      <button class="side-link" data-tab="disputes"><span class="ic">&#9873;</span>Disputes<span class="badge-count" id="disputeBadge" style="display:none;"></span></button>
+      <button class="side-link" data-tab="subscriptions"><span class="ic">&#8635;</span>Subscriptions</button>
+      <button class="side-link" data-tab="settlements"><span class="ic">&#8801;</span>Settlements</button>
+      <button class="side-link" data-tab="payouts"><span class="ic">&#8599;</span>Payouts</button>
+    </div>
+    <div class="sidebar-group">
+      <div class="sidebar-label">Configuration</div>
+      <button class="side-link" data-tab="settings"><span class="ic">&#9881;</span>Settings</button>
+    </div>
+  </aside>
 
-  <div class="stat-row">
-    <div class="stat">
-      <div class="lbl">Wallet balance</div>
-      <div class="val green" id="walletBalance">—</div>
-      <div class="sub-note">Available to pay out</div>
-    </div>
-    <div class="stat">
-      <div class="lbl">Volume received</div>
-      <div class="val" id="volumeIn">—</div>
-      <div class="sub-note" id="txCountNote">— transactions</div>
-    </div>
-    <div class="stat">
-      <div class="lbl">Pending review</div>
-      <div class="val amber" id="flaggedCount">—</div>
-      <div class="sub-note">Flagged transactions</div>
-    </div>
-    <div class="stat">
-      <div class="lbl">Paid out</div>
-      <div class="val blue" id="payoutVolume">—</div>
-      <div class="sub-note" id="payoutCountNote">— payouts</div>
-    </div>
-  </div>
+  <div class="dash-shell">
 
-  <div class="section-tabs">
-    <button class="section-tab active" data-tab="overview">Overview</button>
-    <button class="section-tab" data-tab="transactions">Transactions</button>
-    <button class="section-tab" data-tab="payouts">Payouts</button>
-    <button class="section-tab" data-tab="settings">Settings</button>
-  </div>
-
-  <!-- ============ OVERVIEW ============ -->
-  <div class="tab-panel active" id="tab-overview">
-
-    <div class="panel">
-      <div class="panel-head">
-        <h2>Create a payment link</h2>
-        <span class="hint">Assigns a dedicated virtual account and returns a checkout link</span>
+    <div class="dash-head">
+      <div>
+        <h1 id="bizName">—</h1>
+        <div class="biz" id="bizEmail"></div>
       </div>
-      <div class="panel-body">
-        <form id="linkForm" class="inline-form">
-          <div class="field">
-            <label>Amount (₦)</label>
-            <input type="number" id="linkAmount" placeholder="5000" min="1" step="0.01" required />
-          </div>
-          <div class="field">
-            <label>Customer email</label>
-            <input type="email" id="linkEmail" placeholder="customer@email.com" required />
-          </div>
-          <div class="field">
-            <label>Customer name (optional)</label>
-            <input type="text" id="linkName" placeholder="Jane Doe" />
-          </div>
-          <button type="submit" class="btn btn-primary">Generate link</button>
-        </form>
-        <div id="linkResult"></div>
+      <div class="ledger-tag"><span class="dot"></span>Balance reconciled from ledger</div>
+    </div>
+
+    <div class="stat-row">
+      <div class="stat">
+        <div class="lbl">Wallet balance</div>
+        <div class="val green" id="walletBalance">—</div>
+        <div class="sub-note">Available to pay out</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Volume received</div>
+        <div class="val" id="volumeIn">—</div>
+        <div class="sub-note" id="txCountNote">— transactions</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Pending review</div>
+        <div class="val amber" id="flaggedCount">—</div>
+        <div class="sub-note">Flagged transactions</div>
+      </div>
+      <div class="stat">
+        <div class="lbl">Paid out</div>
+        <div class="val blue" id="payoutVolume">—</div>
+        <div class="sub-note" id="payoutCountNote">— payouts</div>
       </div>
     </div>
 
-    <div class="panel">
-      <div class="panel-head">
-        <h2>Recent transactions</h2>
-        <button class="btn btn-ghost btn-sm" data-goto="transactions">View all</button>
+    <!-- ============ OVERVIEW ============ -->
+    <div class="tab-panel active" id="tab-overview">
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Create a payment link</h2>
+          <span class="hint">Assigns a dedicated virtual account and returns a checkout link</span>
+        </div>
+        <div class="panel-body">
+          <form id="linkForm" class="inline-form">
+            <div class="field">
+              <label>Amount (₦)</label>
+              <input type="number" id="linkAmount" placeholder="5000" min="1" step="0.01" required />
+            </div>
+            <div class="field">
+              <label>Customer email</label>
+              <input type="email" id="linkEmail" placeholder="customer@email.com" required />
+            </div>
+            <div class="field">
+              <label>Customer name (optional)</label>
+              <input type="text" id="linkName" placeholder="Jane Doe" />
+            </div>
+            <button type="submit" class="btn btn-primary">Generate link</button>
+          </form>
+          <div id="linkResult"></div>
+        </div>
       </div>
-      <div class="panel-body" style="padding:0;">
-        <table id="recentTxTable">
-          <thead><tr><th>Reference</th><th>Status</th><th>Received</th><th>Date</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <div class="empty" id="recentTxEmpty" style="display:none;">No transactions yet — generate a payment link above to get started.</div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Recent transactions</h2>
+          <button class="btn btn-ghost btn-sm" data-goto="transactions">View all</button>
+        </div>
+        <div class="panel-body" style="padding:0;">
+          <table id="recentTxTable">
+            <thead><tr><th>Reference</th><th>Status</th><th>Received</th><th>Date</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="recentTxEmpty" style="display:none;">No transactions yet — generate a payment link above to get started.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ TRANSACTIONS ============ -->
+    <div class="tab-panel" id="tab-transactions">
+      <div class="panel">
+        <div class="panel-head"><h2>All transactions</h2></div>
+        <div class="chip-row" id="txFilters">
+          <span class="chip active" data-status="">All</span>
+          <span class="chip" data-status="success">Success</span>
+          <span class="chip" data-status="pending">Pending</span>
+          <span class="chip" data-status="partial">Partial</span>
+          <span class="chip" data-status="over">Overpaid</span>
+          <span class="chip" data-status="flagged">Flagged</span>
+          <span class="chip" data-status="failed">Failed</span>
+        </div>
+        <div class="search-row">
+          <input type="text" id="txSearch" placeholder="Search by reference or bank reference…" />
+        </div>
+        <div class="panel-body" style="padding:16px 0 0;">
+          <table id="txTable">
+            <thead><tr><th>Reference</th><th>Status</th><th>Expected</th><th>Received</th><th>Date</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="txEmpty" style="display:none;">No matching transactions.</div>
+        </div>
       </div>
     </div>
 
-  </div>
+    <!-- ============ CUSTOMERS ============ -->
+    <div class="tab-panel" id="tab-customers">
 
-  <!-- ============ TRANSACTIONS ============ -->
-  <div class="tab-panel" id="tab-transactions">
-    <div class="panel">
-      <div class="panel-head"><h2>All transactions</h2></div>
-      <div class="chip-row" id="txFilters">
-        <span class="chip active" data-status="">All</span>
-        <span class="chip" data-status="success">Success</span>
-        <span class="chip" data-status="pending">Pending</span>
-        <span class="chip" data-status="partial">Partial</span>
-        <span class="chip" data-status="over">Overpaid</span>
-        <span class="chip" data-status="flagged">Flagged</span>
-        <span class="chip" data-status="failed">Failed</span>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Add a customer</h2>
+          <span class="hint">Customers are also created automatically the first time they pay</span>
+        </div>
+        <div class="panel-body">
+          <form id="customerForm" class="inline-form">
+            <div class="field">
+              <label>Full name</label>
+              <input type="text" id="custName" placeholder="Jane Doe" required />
+            </div>
+            <div class="field">
+              <label>Email</label>
+              <input type="email" id="custEmail" placeholder="customer@email.com" required />
+            </div>
+            <div class="field">
+              <label>Phone (optional)</label>
+              <input type="text" id="custPhone" placeholder="080..." />
+            </div>
+            <button type="submit" class="btn btn-primary">Add customer</button>
+          </form>
+        </div>
       </div>
-      <div class="search-row">
-        <input type="text" id="txSearch" placeholder="Search by reference or bank reference…" />
-      </div>
-      <div class="panel-body" style="padding:16px 0 0;">
-        <table id="txTable">
-          <thead><tr><th>Reference</th><th>Status</th><th>Expected</th><th>Received</th><th>Date</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <div class="empty" id="txEmpty" style="display:none;">No matching transactions.</div>
-      </div>
-    </div>
-  </div>
 
-  <!-- ============ PAYOUTS ============ -->
-  <div class="tab-panel" id="tab-payouts">
-
-    <div class="panel">
-      <div class="panel-head"><h2>Request a payout</h2></div>
-      <div class="panel-body">
-        <form id="payoutForm" class="inline-form">
-          <div class="field">
-            <label>Amount (₦)</label>
-            <input type="number" id="poAmount" placeholder="10000" min="1" step="0.01" required />
-          </div>
-          <div class="field">
-            <label>Bank code</label>
-            <input type="text" id="poBankCode" placeholder="058" required />
-          </div>
-          <div class="field">
-            <label>Account number</label>
-            <input type="text" id="poAccountNumber" placeholder="0123456789" required />
-          </div>
-          <div class="field">
-            <label>Account name</label>
-            <input type="text" id="poAccountName" placeholder="As registered with the bank" required />
-          </div>
-          <button type="submit" class="btn btn-primary">Send payout</button>
-        </form>
+      <div class="panel">
+        <div class="panel-head"><h2>All customers</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table id="custTable">
+            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Added</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="custEmpty" style="display:none;">No customers yet.</div>
+        </div>
       </div>
+
     </div>
 
-    <div class="panel">
-      <div class="panel-head"><h2>Payout history</h2></div>
-      <div class="panel-body" style="padding:0;">
-        <table id="poTable">
-          <thead><tr><th>Reference</th><th>Status</th><th>Amount</th><th>Destination</th><th>Date</th></tr></thead>
-          <tbody></tbody>
-        </table>
-        <div class="empty" id="poEmpty" style="display:none;">No payouts yet.</div>
+    <!-- ============ REFUNDS ============ -->
+    <div class="tab-panel" id="tab-refunds">
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Request a refund</h2>
+          <span class="hint">Only transactions with status success, partial or over are refundable</span>
+        </div>
+        <div class="panel-body">
+          <form id="refundForm" class="inline-form">
+            <div class="field">
+              <label>Transaction</label>
+              <select id="refTxSelect" required>
+                <option value="">Select a refundable transaction…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Amount (₦)</label>
+              <input type="number" id="refAmount" placeholder="5000" min="1" step="0.01" required />
+            </div>
+            <div class="field">
+              <label>Reason (optional)</label>
+              <input type="text" id="refReason" placeholder="Customer requested" />
+            </div>
+            <div class="field">
+              <label>Bank code</label>
+              <input type="text" id="refBankCode" placeholder="058" required />
+            </div>
+            <div class="field">
+              <label>Account number</label>
+              <input type="text" id="refAccountNumber" placeholder="0123456789" required />
+            </div>
+            <div class="field">
+              <label>Account name</label>
+              <input type="text" id="refAccountName" placeholder="As registered with the bank" required />
+            </div>
+            <button type="submit" class="btn btn-primary">Submit refund</button>
+          </form>
+        </div>
       </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Refund history</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table id="refTable">
+            <thead><tr><th>Reference</th><th>Status</th><th>Amount</th><th>Reason</th><th>Date</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="refEmpty" style="display:none;">No refunds yet.</div>
+        </div>
+      </div>
+
     </div>
 
-  </div>
+    <!-- ============ DISPUTES ============ -->
+    <div class="tab-panel" id="tab-disputes">
 
-  <!-- ============ SETTINGS ============ -->
-  <div class="tab-panel" id="tab-settings">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Open disputes</h2>
+          <span class="hint">Opened by ops when a chargeback notice arrives — submit evidence before the deadline</span>
+        </div>
+        <div class="panel-body" style="padding:0;">
+          <table id="disputeTable">
+            <thead><tr><th>Code</th><th>Status</th><th>Amount</th><th>Reason</th><th>Evidence due</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="disputeEmpty" style="display:none;">No disputes on your account.</div>
+        </div>
+      </div>
 
-    <div class="panel">
-      <div class="panel-head"><h2>Business</h2></div>
-      <div class="panel-body">
-        <div class="info-grid">
-          <div class="info-item">
-            <div class="k-label">Business name</div>
-            <div class="k-val2" id="setBizName">—</div>
-          </div>
-          <div class="info-item">
-            <div class="k-label">Email</div>
-            <div class="k-val2" id="setBizEmail">—</div>
-          </div>
-          <div class="info-item">
-            <div class="k-label">Test public key</div>
-            <div class="k-val2" id="setTestPubKey">—</div>
-          </div>
-          <div class="info-item">
-            <div class="k-label">Live public key</div>
-            <div class="k-val2" id="setLivePubKey">—</div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Submit evidence</h2>
+          <span class="hint">Only accepted while a dispute is open or under review</span>
+        </div>
+        <div class="panel-body">
+          <form id="evidenceForm" class="inline-form">
+            <div class="field">
+              <label>Dispute</label>
+              <select id="evDisputeSelect" required>
+                <option value="">Select a dispute…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Description</label>
+              <input type="text" id="evDescription" placeholder="Proof of delivery, customer correspondence, etc." required />
+            </div>
+            <div class="field">
+              <label>Evidence URL (optional)</label>
+              <input type="url" id="evUrl" placeholder="https://…" />
+            </div>
+            <button type="submit" class="btn btn-primary">Submit evidence</button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ SUBSCRIPTIONS ============ -->
+    <div class="tab-panel" id="tab-subscriptions">
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Create a plan</h2>
+          <span class="hint">Customers subscribe to a plan and are billed each interval</span>
+        </div>
+        <div class="panel-body">
+          <form id="planForm" class="inline-form">
+            <div class="field">
+              <label>Plan name</label>
+              <input type="text" id="planName" placeholder="Pro monthly" required />
+            </div>
+            <div class="field">
+              <label>Amount (₦)</label>
+              <input type="number" id="planAmount" placeholder="5000" min="1" step="0.01" required />
+            </div>
+            <div class="field">
+              <label>Interval</label>
+              <select id="planInterval">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly" selected>Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Create plan</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Plans</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table id="planTable">
+            <thead><tr><th>Name</th><th>Amount</th><th>Interval</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="planEmpty" style="display:none;">No plans yet — create one above.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Subscribe a customer</h2>
+        </div>
+        <div class="panel-body">
+          <form id="subscribeForm" class="inline-form">
+            <div class="field">
+              <label>Customer</label>
+              <select id="subCustomerSelect" required>
+                <option value="">Select a customer…</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Plan</label>
+              <select id="subPlanSelect" required>
+                <option value="">Select a plan…</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Subscribe</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Subscriptions</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table id="subTable">
+            <thead><tr><th>Code</th><th>Plan</th><th>Status</th><th>Next billing</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="subEmpty" style="display:none;">No subscriptions yet.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Invoices</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table id="invTable">
+            <thead><tr><th>Invoice</th><th>Status</th><th>Amount</th><th>Due</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="invEmpty" style="display:none;">No invoices yet.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ============ SETTLEMENTS ============ -->
+    <div class="tab-panel" id="tab-settlements">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Settlement schedule</h2>
+          <span class="hint">How a confirmed payment moves to your payout-ready balance</span>
+        </div>
+        <div class="panel-body">
+          <div class="stub-note">
+            <span class="ic">&#8505;</span>
+            <div>
+              Settlement batches move a transaction through
+              <code>pending_settlement → settled → available</code> on a schedule, but that
+              history is only exposed through an operator-only endpoint
+              (<code>/api/v1/admin/settlement/batches</code>, gated by
+              <code>INFRA_ADMIN_KEY</code>) — not a merchant-scoped one yet.
+              Your <strong>wallet balance</strong> on the Overview tab already reflects
+              settled funds; a per-transaction settlement timeline for merchants
+              is the next thing to add on the backend before this panel can show real data.
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="panel">
-      <div class="panel-head">
-        <h2>API secret keys</h2>
-        <span class="hint">Used to authenticate API requests — shown once, never retrievable after</span>
-      </div>
-      <div class="panel-body">
+    <!-- ============ PAYOUTS ============ -->
+    <div class="tab-panel" id="tab-payouts">
 
-        <div class="key-block">
-          <div class="key-block-head">
-            <div class="title"><span class="mode-badge">test</span>Test secret key</div>
-            <button class="btn btn-sm" id="regenTestKeyBtn">Regenerate</button>
-          </div>
-          <p class="desc">Safe to use for building and QA — never touches real money.</p>
-          <div id="regenTestKeyResult"></div>
+      <div class="panel">
+        <div class="panel-head"><h2>Request a payout</h2></div>
+        <div class="panel-body">
+          <form id="payoutForm" class="inline-form">
+            <div class="field">
+              <label>Amount (₦)</label>
+              <input type="number" id="poAmount" placeholder="10000" min="1" step="0.01" required />
+            </div>
+            <div class="field">
+              <label>Bank code</label>
+              <input type="text" id="poBankCode" placeholder="058" required />
+            </div>
+            <div class="field">
+              <label>Account number</label>
+              <input type="text" id="poAccountNumber" placeholder="0123456789" required />
+            </div>
+            <div class="field">
+              <label>Account name</label>
+              <input type="text" id="poAccountName" placeholder="As registered with the bank" required />
+            </div>
+            <button type="submit" class="btn btn-primary">Send payout</button>
+          </form>
         </div>
-
-        <div class="key-block">
-          <div class="key-block-head">
-            <div class="title"><span class="mode-badge live">live</span>Live secret key</div>
-            <button class="btn btn-sm btn-danger-outline" id="regenLiveKeyBtn">Regenerate</button>
-          </div>
-          <p class="desc">Authenticates real transactions. Your live key was shown once at signup — if you didn't save it, generate a new one below. The old one stops working immediately.</p>
-          <div id="regenLiveKeyResult"></div>
-        </div>
-
       </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Payout history</h2></div>
+        <div class="panel-body" style="padding:0;">
+          <table id="poTable">
+            <thead><tr><th>Reference</th><th>Status</th><th>Amount</th><th>Destination</th><th>Date</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="empty" id="poEmpty" style="display:none;">No payouts yet.</div>
+        </div>
+      </div>
+
     </div>
 
-    <div class="panel">
-      <div class="panel-head">
-        <h2>Webhook URL</h2>
-        <span class="hint">RexxPay POSTs a signed transaction.success event here on every confirmed transfer</span>
-      </div>
-      <div class="panel-body">
-        <form id="webhookForm" class="inline-form">
-          <div class="field">
-            <label>https://your-store.com/rexxpay/webhook</label>
-            <input type="url" id="webhookUrlInput" placeholder="https://your-store.com/rexxpay/webhook" />
+    <!-- ============ SETTINGS ============ -->
+    <div class="tab-panel" id="tab-settings">
+
+      <div class="panel">
+        <div class="panel-head"><h2>Business</h2></div>
+        <div class="panel-body">
+          <div class="info-grid">
+            <div class="info-item">
+              <div class="k-label">Business name</div>
+              <div class="k-val2" id="setBizName">—</div>
+            </div>
+            <div class="info-item">
+              <div class="k-label">Email</div>
+              <div class="k-val2" id="setBizEmail">—</div>
+            </div>
+            <div class="info-item">
+              <div class="k-label">Test public key</div>
+              <div class="k-val2" id="setTestPubKey">—</div>
+            </div>
+            <div class="info-item">
+              <div class="k-label">Live public key</div>
+              <div class="k-val2" id="setLivePubKey">—</div>
+            </div>
           </div>
-          <button type="submit" class="btn btn-primary">Save</button>
-        </form>
+        </div>
       </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>API secret keys</h2>
+          <span class="hint">Used to authenticate API requests — shown once, never retrievable after</span>
+        </div>
+        <div class="panel-body">
+
+          <div class="key-block">
+            <div class="key-block-head">
+              <div class="title"><span class="mode-tag">test</span>Test secret key</div>
+              <button class="btn btn-sm" id="regenTestKeyBtn">Regenerate</button>
+            </div>
+            <p class="desc">Safe to use for building and QA — never touches real money.</p>
+            <div id="regenTestKeyResult"></div>
+          </div>
+
+          <div class="key-block">
+            <div class="key-block-head">
+              <div class="title"><span class="mode-tag live">live</span>Live secret key</div>
+              <button class="btn btn-sm btn-danger-outline" id="regenLiveKeyBtn">Regenerate</button>
+            </div>
+            <p class="desc">Authenticates real transactions. Your live key was shown once at signup — if you didn't save it, generate a new one below. The old one stops working immediately.</p>
+            <div id="regenLiveKeyResult"></div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Webhook URL</h2>
+          <span class="hint">RexxPay POSTs a signed transaction.success event here on every confirmed transfer</span>
+        </div>
+        <div class="panel-body">
+          <form id="webhookForm" class="inline-form">
+            <div class="field">
+              <label>https://your-store.com/rexxpay/webhook</label>
+              <input type="url" id="webhookUrlInput" placeholder="https://your-store.com/rexxpay/webhook" />
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </form>
+        </div>
+      </div>
+
     </div>
 
   </div>
-
 </div>
 
 <div class="toast" id="toast"></div>
