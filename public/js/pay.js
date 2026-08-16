@@ -41,8 +41,80 @@
   const payCard =
     document.getElementById('payCard');
 
+  const testBanner =
+    document.getElementById('testBanner');
+
+  const simulateBtn =
+    document.getElementById('simulateBtn');
+
+  const simulateHint =
+    document.getElementById('simulateHint');
+
 
   let polling = null;
+  let testModeUiShown = false;
+  let simulateInFlight = false;
+
+
+  function showTestModeUi() {
+    if (testModeUiShown) {
+      return;
+    }
+
+    testModeUiShown = true;
+
+    testBanner.style.display = 'block';
+    simulateBtn.style.display = 'block';
+    simulateHint.style.display = 'block';
+  }
+
+
+  async function simulateTransfer() {
+    if (simulateInFlight || !checkoutToken) {
+      return;
+    }
+
+    simulateInFlight = true;
+    simulateBtn.disabled = true;
+    simulateBtn.textContent = 'Simulating…';
+
+    try {
+      const res = await fetch(
+        `/api/checkout/${encodeURIComponent(
+          checkoutToken
+        )}/simulate`,
+        {
+          method: 'POST',
+        }
+      );
+
+      const body = await res.json();
+
+      if (!body.status) {
+        simulateBtn.disabled = false;
+        simulateBtn.textContent = 'Simulate bank transfer';
+        simulateHint.textContent =
+          body.message === 'account_is_not_currently_awaiting_a_payment'
+            ? 'This payment already went through.'
+            : 'Could not simulate this transfer. Try again.';
+        simulateInFlight = false;
+        return;
+      }
+
+      // The next scheduled poll() picks up the resulting status and
+      // shows the success screen - nothing else to do here.
+    } catch (err) {
+      simulateBtn.disabled = false;
+      simulateBtn.textContent = 'Simulate bank transfer';
+      simulateInFlight = false;
+    }
+  }
+
+
+  simulateBtn.addEventListener(
+    'click',
+    simulateTransfer
+  );
 
 
   function money(minor) {
@@ -168,6 +240,11 @@
 
 
       const d = body.data;
+
+
+      if (d.mode === 'test') {
+        showTestModeUi();
+      }
 
 
       bankEl.textContent =
