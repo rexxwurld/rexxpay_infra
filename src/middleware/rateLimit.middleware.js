@@ -41,8 +41,25 @@ const webhookLimiter = rateLimit({
   },
 });
 
+// Public demo checkout — unauthenticated by design (see demo.routes.js),
+// so this is the only thing standing between it and abuse (someone
+// scripting thousands of fake checkouts against the demo merchant).
+// Tighter than generalLimiter, looser than authLimiter — a real visitor
+// clicking through the demo a few times should never hit this.
+const demoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: false,
+    message: 'too_many_demo_requests',
+  },
+});
+
 module.exports = {
   generalLimiter,
   authLimiter,
   webhookLimiter,
+  demoLimiter,
 };
