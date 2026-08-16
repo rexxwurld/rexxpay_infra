@@ -127,7 +127,6 @@ function renderBankSelect(rows) {
 async function provisionPool() {
   const bankSlug = document.getElementById('bankSelect').value;
   const count = parseInt(document.getElementById('countInput').value, 10) || 20;
-  const mode = document.getElementById('modeSelect').value;
 
   if (!bankSlug) {
     toast('No bank selected.', true);
@@ -137,8 +136,10 @@ async function provisionPool() {
   const btn = document.getElementById('provisionBtn');
   btn.disabled = true;
   try {
+    // Always live - test-mode accounts are minted on demand per
+    // checkout and are never pre-provisioned (see bankPartner.service.js).
     const res = await adminApi(
-      `/provision-pool?bankSlug=${encodeURIComponent(bankSlug)}&count=${count}&mode=${mode}`,
+      `/provision-pool?bankSlug=${encodeURIComponent(bankSlug)}&count=${count}&mode=live`,
       { method: 'GET' }
     );
     toast(res.message || 'Provisioned.');
