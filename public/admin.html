@@ -172,7 +172,7 @@
         <tr>
           <th>Bank</th>
           <th colspan="3">Live (real bank)</th>
-          <th colspan="2">Test</th>
+          <th colspan="2">Test (legacy/in-flight — no longer provisioned)</th>
         </tr>
         <tr><th></th><th>Available</th><th>Assigned</th><th>Status</th><th>Available</th><th>Assigned</th></tr>
       </thead>
@@ -195,11 +195,11 @@
         <input id="countInput" type="number" min="1" max="500" value="20" />
       </div>
       <div class="field">
-        <label for="modeSelect">Mode</label>
-        <select id="modeSelect">
-          <option value="live" selected>Live</option>
-          <option value="test">Test</option>
-        </select>
+        <!-- Mode is no longer a choice here - test-mode accounts are
+             minted on demand per checkout and are never pre-provisioned,
+             so this form only ever provisions the real (live) pool. -->
+        <label>Mode</label>
+        <input type="text" value="Live (real bank)" disabled />
       </div>
       <button class="btn primary" id="provisionBtn">Provision</button>
     </div>
