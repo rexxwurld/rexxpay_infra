@@ -22,6 +22,8 @@ const {
 } = require('../subscription/subscription.service');
 
 const auditLog = require('../audit/auditLog.service');
+const logger = require('../../utils/logger');
+const { enqueueWebhookEvent } = require('../../queue/webhookQueue');
 
 const MAX_ATTEMPTS = 5;
 
@@ -29,6 +31,15 @@ const MAX_ATTEMPTS = 5;
 |--------------------------------------------------------------------------
 | ENQUEUE WEBHOOK
 |--------------------------------------------------------------------------
+|
+| Persists the event, then hands it to the durable (Redis-backed)
+| BullMQ queue instead of firing an in-process setImmediate. If this
+| process crashes right after this call returns, the job survives in
+| Redis and a worker (any worker, on any instance) will still pick it
+| up - the old setImmediate-based approach lost the event entirely in
+| that scenario, recoverable only by the next server restart's
+| redriveStuckEvents() sweep.
+|
 */
 
 async function enqueue({ rawBody, signature }) {
@@ -38,15 +49,14 @@ async function enqueue({ rawBody, signature }) {
     status: 'queued',
   });
 
-  setImmediate(() =>
-    processEvent(event._id).catch((err) => {
-      console.error(
-        '[webhook.processor] unhandled error processing event',
-        event._id.toString(),
-        err.message
-      );
-    })
-  );
+  try {
+    await enqueueWebhookEvent(event._id);
+  } catch (err) {
+    // If Redis itself is unreachable, fall back to redriveStuckEvents()
+    // picking this up on next boot rather than losing it silently -
+    // the event is already durably persisted in Mongo either way.
+    logger.error({ err, eventId: event._id.toString() }, '[webhook.processor] failed to enqueue event onto durable queue');
+  }
 
   return event;
 }
@@ -202,9 +212,7 @@ async function processEvent(eventId) {
           accountNumber,
         });
 
-        console.log(
-          `[webhook.processor] virtual account ${accountNumber} deactivated after payment`
-        );
+        logger.info({ accountNumber }, '[webhook.processor] virtual account deactivated after payment');
       } catch (deactivateError) {
         /*
         |--------------------------------------------------------------------------
@@ -221,11 +229,7 @@ async function processEvent(eventId) {
         |
         */
 
-        console.error(
-          '[webhook.processor] FAILED TO DEACTIVATE ACCOUNT',
-          accountNumber,
-          deactivateError.message
-        );
+        logger.error({ accountNumber, err: deactivateError }, '[webhook.processor] FAILED TO DEACTIVATE ACCOUNT');
 
         await auditLog.record({
           actorType: 'system',
@@ -264,10 +268,7 @@ async function processEvent(eventId) {
             tx_ref: merchantReference,
           },
         }).catch((err) => {
-          console.error(
-            '[webhook.processor] merchant webhook dispatch failed:',
-            err.message
-          );
+          logger.error({ err }, '[webhook.processor] merchant webhook dispatch failed');
         });
       }
 
@@ -278,11 +279,7 @@ async function processEvent(eventId) {
       */
 
       markInvoicePaidByTransaction(transaction).catch((err) => {
-        console.error(
-          '[webhook.processor] failed to reconcile invoice for transaction',
-          transaction._id.toString(),
-          err.message
-        );
+        logger.error({ err, transactionId: transaction._id.toString() }, '[webhook.processor] failed to reconcile invoice for transaction');
       });
     }
 
@@ -302,6 +299,15 @@ async function processEvent(eventId) {
     |--------------------------------------------------------------------------
     | RETRY HANDLING
     |--------------------------------------------------------------------------
+    |
+    | Retry scheduling itself is now owned by BullMQ (see
+    | queue/webhookQueue.js's defaultJobOptions: 5 attempts, exponential
+    | backoff) - this function no longer schedules its own setTimeout.
+    | We still record status/lastError on the Mongo doc for
+    | visibility/audit, and we re-throw so BullMQ knows the job failed
+    | and should be retried (or moved to the failed set once its own
+    | attempts are exhausted).
+    |
     */
 
     event.lastError = err.message;
@@ -312,12 +318,6 @@ async function processEvent(eventId) {
         : 'queued';
 
     await event.save();
-
-    /*
-    |--------------------------------------------------------------------------
-    | PERMANENT FAILURE
-    |--------------------------------------------------------------------------
-    */
 
     if (event.status === 'failed') {
       await auditLog.record({
@@ -330,21 +330,11 @@ async function processEvent(eventId) {
           error: err.message,
         },
       });
-
-      return;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | RETRY WITH BACKOFF
-    |--------------------------------------------------------------------------
-    */
-
-    const backoffMs = 2000 * event.attempts;
-
-    setTimeout(() => {
-      processEvent(event._id).catch(() => {});
-    }, backoffMs);
+    // Re-throw so the BullMQ worker marks this job attempt as failed
+    // and applies its own backoff/attempts policy.
+    throw err;
   }
 }
 
@@ -361,8 +351,14 @@ async function redriveStuckEvents() {
     },
   });
 
+  // Route redriven events back through the durable queue rather than
+  // calling processEvent directly in-process, so they get the same
+  // BullMQ-managed attempts/backoff as any other event instead of a
+  // single unmanaged retry.
   for (const event of stuck) {
-    processEvent(event._id).catch(() => {});
+    await enqueueWebhookEvent(event._id).catch((err) => {
+      logger.error({ err, eventId: event._id.toString() }, '[webhook.processor] failed to redrive stuck event onto durable queue');
+    });
   }
 
   return stuck.length;

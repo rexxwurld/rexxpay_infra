@@ -4,6 +4,8 @@ const connectDB = require('./config/db');
 const { port } = require('./config/env');
 const { ensureDefaultBankPartners } = require('./modules/bankPartner/bankPartner.service');
 const { redriveStuckEvents } = require('./modules/webhook/webhook.processor');
+const { startWebhookWorker } = require('./queue/webhookWorker');
+const logger = require('./utils/logger');
 
 async function start() {
   await connectDB();
@@ -19,19 +21,29 @@ async function start() {
   // e.g. via a one-off script or an authenticated admin route, and only
   // top it up again when the pool actually runs low.
 
-  // If the process crashed/restarted mid-webhook-processing, pick those
-  // events back up instead of leaving them stuck in 'queued'/'processing'
-  // forever. A real queue (SQS/BullMQ) gives you this for free via
-  // visibility timeouts; this is the equivalent for the in-process stand-in.
+  // Redis-backed events (queue/webhookQueue.js) survive a crash on
+  // their own now. This sweep only catches the edge case of an event
+  // that was persisted in Mongo but never made it onto the queue (e.g.
+  // Redis was briefly unreachable at enqueue time).
   const redriven = await redriveStuckEvents();
-  if (redriven > 0) console.log(`[server] redriving ${redriven} stuck webhook event(s)`);
+  if (redriven > 0) logger.info({ redriven }, '[server] redrove stuck webhook event(s) onto durable queue');
+
+  // Runs the BullMQ worker in the same process by default (fine for a
+  // single small deployment / free-tier hosting). Set
+  // WEBHOOK_WORKER_IN_PROCESS=false and run `node src/queue/webhookWorker.js`
+  // as a separate process/dyno once webhook volume needs to scale
+  // independently of the API.
+  if (process.env.WEBHOOK_WORKER_IN_PROCESS !== 'false') {
+    startWebhookWorker();
+    logger.info('[server] webhook worker started in-process');
+  }
 
   app.listen(port, () => {
-    console.log(`[server] RexxPay listening on port ${port}`);
+    logger.info({ port }, '[server] RexxPay listening');
   });
 }
 
 start().catch((err) => {
-  console.error('[server] failed to start:', err);
+  logger.error({ err }, '[server] failed to start');
   process.exit(1);
 });
