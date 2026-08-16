@@ -48,7 +48,9 @@ async function getOrCreateDemoMerchant() {
   return demoMerchantId;
 }
 
-async function startDemoCheckout({ amount, baseUrl }) {
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+async function startDemoCheckout({ amount, name, email, phone, baseUrl }) {
   const amountMinor = Math.round(Number(amount) * 100);
   if (!Number.isFinite(amountMinor) || amountMinor <= 0) {
     throw new Error('invalid_amount');
@@ -57,16 +59,23 @@ async function startDemoCheckout({ amount, baseUrl }) {
     throw new Error('demo_amount_too_large');
   }
 
-  const merchantId = await getOrCreateDemoMerchant();
+  const trimmedName = (name || '').trim();
+  const trimmedEmail = (email || '').trim().toLowerCase();
+  const trimmedPhone = (phone || '').trim();
 
-  // A throwaway, unique demo customer per visitor - keeps the demo
-  // merchant's customer list from colliding across concurrent visitors.
-  const email = `visitor+${crypto.randomBytes(6).toString('hex')}@demo.rexxpay.internal`;
+  if (!trimmedName) {
+    throw new Error('name_required');
+  }
+  if (!trimmedEmail || !EMAIL_RE.test(trimmedEmail)) {
+    throw new Error('valid_email_required');
+  }
+
+  const merchantId = await getOrCreateDemoMerchant();
 
   const result = await initializePayment({
     merchantId,
     amount,
-    customer: { email, name: 'Demo visitor' },
+    customer: { email: trimmedEmail, name: trimmedName, phone: trimmedPhone || null },
     baseUrl,
     mode: 'test',
   });
