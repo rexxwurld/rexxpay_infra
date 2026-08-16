@@ -3,6 +3,40 @@ let payouts = [];
 let txFilter = '';
 let txSearch = '';
 
+// Which mode the dashboard is currently VIEWING - not tied to any API
+// key, since the dashboard is a session login. Persisted so a refresh
+// doesn't silently drop you back to test and make you think your live
+// data disappeared. Defaults to 'test': the safer default, matching
+// wallet.service's own fail-closed-to-test philosophy - a merchant
+// should have to deliberately opt into looking at live data.
+let viewMode = localStorage.getItem('swiftpay_dashboard_mode') === 'live' ? 'live' : 'test';
+
+function setViewMode(mode, { reload = true } = {}) {
+  viewMode = mode === 'live' ? 'live' : 'test';
+  localStorage.setItem('swiftpay_dashboard_mode', viewMode);
+
+  document.getElementById('modeToggleTest').classList.toggle('active', viewMode === 'test');
+  document.getElementById('modeToggleLive').classList.toggle('active', viewMode === 'live');
+
+  const modeBadge = document.getElementById('modeBadge');
+  modeBadge.textContent = `${viewMode} mode`;
+  modeBadge.classList.toggle('live', viewMode === 'live');
+
+  document.getElementById('modeToggleNote').textContent =
+    viewMode === 'live'
+      ? 'Showing real wallet balance, transactions and payouts.'
+      : 'Showing sandbox data only - nothing here is real money.';
+
+  if (reload) {
+    Promise.all([loadWallet(), loadTransactions(), loadPayouts()]).catch((err) => {
+      if (err.message !== 'unauthenticated') toast(err.message, true);
+    });
+  }
+}
+
+document.getElementById('modeToggleTest').addEventListener('click', () => setViewMode('test'));
+document.getElementById('modeToggleLive').addEventListener('click', () => setViewMode('live'));
+
 function toast(msg, isErr = false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -37,11 +71,6 @@ async function loadProfile() {
   document.getElementById('bizEmail').textContent = res.data.email;
   document.getElementById('webhookUrlInput').value = res.data.webhookUrl || '';
 
-  const modeBadge = document.getElementById('modeBadge');
-  const mode = res.data.mode || 'test';
-  modeBadge.textContent = `${mode} mode`;
-  modeBadge.classList.toggle('live', mode === 'live');
-
   document.getElementById('setBizName').textContent = res.data.businessName;
   document.getElementById('setBizEmail').textContent = res.data.email;
   document.getElementById('setTestPubKey').textContent = res.data.testPublicKey || '—';
@@ -49,7 +78,7 @@ async function loadProfile() {
 }
 
 async function loadWallet() {
-  const res = await api('/api/wallet');
+  const res = await api(`/api/wallet?mode=${viewMode}`);
   document.getElementById('walletBalance').textContent = money(res.data.balance);
 }
 
@@ -108,7 +137,7 @@ function renderTransactions() {
 }
 
 async function loadTransactions() {
-  const res = await api('/api/transactions');
+  const res = await api(`/api/transactions?mode=${viewMode}`);
   transactions = res.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const settled = ['success', 'partial', 'over'];
@@ -144,7 +173,7 @@ function renderPayouts() {
 }
 
 async function loadPayouts() {
-  const res = await api('/api/payouts');
+  const res = await api(`/api/payouts?mode=${viewMode}`);
   payouts = res.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const paidOut = payouts
@@ -157,6 +186,7 @@ async function loadPayouts() {
 }
 
 async function refreshAll() {
+  setViewMode(viewMode, { reload: false });
   await Promise.all([loadProfile(), loadWallet(), loadTransactions(), loadPayouts()]);
 }
 
