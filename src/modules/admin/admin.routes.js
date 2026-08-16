@@ -7,10 +7,15 @@
 const express = require('express');
 const router = express.Router();
 const requireAdminKey = require('../../middleware/adminKey.middleware');
-const { ensureDefaultBankPartners, provisionAccountPool } = require('../bankPartner/bankPartner.service');
+const { ensureDefaultBankPartners, provisionAccountPool, maintainAccountPools } = require('../bankPartner/bankPartner.service');
 const VirtualAccount = require('../virtualAccount/virtualAccount.model');
 const BankPartner = require('../bankPartner/bankPartner.model');
 const Merchant = require('../merchant/merchant.model');
+const limits = require('../../config/limits');
+const { releaseStaleAssignedAccounts, reactivateExpiredAccounts } = require('../virtualAccount/virtualAccount.service');
+const { SUPPORTED_CURRENCIES } = require('../../config/currencies');
+const { runSettlementCycle } = require('../settlement/settlement.service');
+const { generateDueInvoices, markOverdueInvoices } = require('../subscription/subscription.service');
 
 // GET so it's genuinely "visit a URL" - no curl/Postman needed. A GET that
 // changes state is unconventional REST, but this is an internal operator
@@ -97,6 +102,114 @@ router.patch('/merchants/:id/fees', requireAdminKey, async (req, res) => {
     res.json({ status: true, data: merchant });
   } catch (err) {
     res.status(400).json({ status: false, message: err.message });
+  }
+});
+
+// ================= CRON TRIGGER ENDPOINTS =================
+// Same idea as /provision-pool above: these mirror the equivalent
+// scripts/*.js file exactly (same service functions, same logic) so an
+// external scheduler (Hostinger cron, cron-job.org, GitHub Actions, etc.)
+// can trigger them with a plain GET request instead of needing shell/SSH
+// access to run `node scripts/*.js` directly. Guarded by the same
+// requireAdminKey middleware as every other admin route.
+//
+// Visit (or curl, or point a cron job at):
+//   https://checkout-rexxpay.onrender.com/api/admin/cron/release-stale-accounts?adminKey=YOUR_KEY
+//   https://checkout-rexxpay.onrender.com/api/admin/cron/reactivate-expired-accounts?adminKey=YOUR_KEY
+//   https://checkout-rexxpay.onrender.com/api/admin/cron/auto-provision-pool?adminKey=YOUR_KEY
+//   https://checkout-rexxpay.onrender.com/api/admin/cron/run-settlement?adminKey=YOUR_KEY
+//   https://checkout-rexxpay.onrender.com/api/admin/cron/generate-invoices?adminKey=YOUR_KEY
+
+// Mirrors scripts/release-stale-accounts.js
+router.get('/cron/release-stale-accounts', requireAdminKey, async (req, res) => {
+  try {
+    const released = await releaseStaleAssignedAccounts(limits.VIRTUAL_ACCOUNT_EXPIRY_MINUTES);
+    res.json({
+      status: true,
+      message: `Released ${released} account(s) assigned longer than ${limits.VIRTUAL_ACCOUNT_EXPIRY_MINUTES} minute(s) with no payment.`,
+      released,
+    });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+});
+
+// Mirrors scripts/reactivate-expired-accounts.js
+router.get('/cron/reactivate-expired-accounts', requireAdminKey, async (req, res) => {
+  try {
+    const reactivated = await reactivateExpiredAccounts();
+    res.json({
+      status: true,
+      message: `Reactivated ${reactivated} account(s) whose cooldown expired.`,
+      reactivated,
+    });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+});
+
+// Mirrors scripts/auto-provision-pool.js
+router.get('/cron/auto-provision-pool', requireAdminKey, async (req, res) => {
+  try {
+    const threshold = req.query.threshold ? parseInt(req.query.threshold, 10) : limits.POOL_MIN_THRESHOLD;
+    const topUpCount = req.query.topUpCount ? parseInt(req.query.topUpCount, 10) : limits.POOL_TOPUP_COUNT;
+
+    await ensureDefaultBankPartners();
+    const results = await maintainAccountPools({ threshold, topUpCount });
+
+    const anyFailed = results.some((r) => r.action === 'failed');
+
+    res.status(anyFailed ? 207 : 200).json({ status: !anyFailed, results });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+});
+
+// Mirrors scripts/run-settlement.js
+router.get('/cron/run-settlement', requireAdminKey, async (req, res) => {
+  try {
+    const requested = req.query.currencies
+      ? String(req.query.currencies).split(',').map((c) => c.trim().toUpperCase())
+      : Object.keys(SUPPORTED_CURRENCIES);
+
+    const summary = [];
+    for (const currency of requested) {
+      try {
+        const { settleBatch, availableBatch } = await runSettlementCycle({ currency });
+        summary.push({
+          currency,
+          settled: { count: settleBatch.transactionCount, amount: settleBatch.totalAmount, status: settleBatch.status },
+          madeAvailable: { count: availableBatch.transactionCount, amount: availableBatch.totalAmount, status: availableBatch.status },
+        });
+      } catch (err) {
+        summary.push({ currency, error: err.message });
+      }
+    }
+
+    const anyFailed = summary.some(
+      (s) => s.error || s.settled?.status === 'failed' || s.madeAvailable?.status === 'failed'
+    );
+
+    res.status(anyFailed ? 207 : 200).json({ status: !anyFailed, summary });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+});
+
+// Mirrors scripts/generate-invoices.js
+router.get('/cron/generate-invoices', requireAdminKey, async (req, res) => {
+  try {
+    const invoices = await generateDueInvoices();
+    const overdueCount = await markOverdueInvoices();
+
+    res.json({
+      status: true,
+      message: `Generated/confirmed ${invoices.length} invoice(s); marked ${overdueCount} as overdue.`,
+      generated: invoices.length,
+      overdue: overdueCount,
+    });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
   }
 });
 
