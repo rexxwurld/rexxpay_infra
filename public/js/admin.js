@@ -127,6 +127,7 @@ function renderBankSelect(rows) {
 async function provisionPool() {
   const bankSlug = document.getElementById('bankSelect').value;
   const count = parseInt(document.getElementById('countInput').value, 10) || 20;
+  const mode = document.getElementById('modeSelect').value;
 
   if (!bankSlug) {
     toast('No bank selected.', true);
@@ -137,7 +138,7 @@ async function provisionPool() {
   btn.disabled = true;
   try {
     const res = await adminApi(
-      `/provision-pool?bankSlug=${encodeURIComponent(bankSlug)}&count=${count}`,
+      `/provision-pool?bankSlug=${encodeURIComponent(bankSlug)}&count=${count}&mode=${mode}`,
       { method: 'GET' }
     );
     toast(res.message || 'Provisioned.');
