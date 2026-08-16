@@ -1,6 +1,6 @@
 // src/config/currencies.js
 //
-// Central registry of currencies RexxPay will hold balances in, post
+// Central registry of currencies SwiftPay will hold balances in, post
 // ledger entries in, and pay out in. Adding a currency here does NOT
 // wire up an inbound rail for it - inbound collection is still NGN-only
 // (dedicated virtual accounts are Nigerian bank accounts). What this
@@ -8,7 +8,7 @@
 // and refunds in a currency that matches the transaction that funded it,
 // and the platform stops silently mislabeling money.
 //
-// No FX conversion is implemented. RexxPay never converts between
+// No FX conversion is implemented. SwiftPay never converts between
 // currencies on a merchant's behalf - each currency is its own isolated
 // ledger. A merchant with an NGN wallet and a USD wallet holds two
 // balances, never one converted figure.

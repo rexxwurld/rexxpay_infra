@@ -1,6 +1,6 @@
 // src/modules/demo/demo.service.js
 //
-// Backs the public /demo page - lets a visitor with no RexxPay account
+// Backs the public /demo page - lets a visitor with no SwiftPay account
 // click through a full test-mode checkout (virtual account -> simulated
 // bank transfer -> success) to see how the product works before they
 // sign up. Everything this touches is pinned to mode:'test' and to one
@@ -12,7 +12,7 @@ const Merchant = require('../merchant/merchant.model');
 const { generateKeyPair, hashSecretKey, generateWebhookSecret } = require('../../utils/apiKeys');
 const { initializePayment } = require('../payment/payment.service');
 
-const DEMO_MERCHANT_EMAIL = process.env.DEMO_MERCHANT_EMAIL || 'demo@rexxpay.internal';
+const DEMO_MERCHANT_EMAIL = process.env.DEMO_MERCHANT_EMAIL || 'demo@swiftpay.internal';
 const DEMO_MAX_AMOUNT_MINOR = Number(process.env.DEMO_MAX_AMOUNT_MINOR || 50_000_00); // ₦50,000 ceiling, generous but not tied to real limits
 
 let demoMerchantId = null; // cached after first lookup/creation per process
@@ -28,7 +28,7 @@ async function getOrCreateDemoMerchant() {
     const live = generateKeyPair('live');
 
     merchant = await Merchant.create({
-      businessName: 'RexxPay Demo',
+      businessName: 'SwiftPay Demo',
       email: DEMO_MERCHANT_EMAIL,
       passwordHash,
       plan: 'starter',

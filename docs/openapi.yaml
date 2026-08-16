@@ -19,12 +19,13 @@ info:
 
     Webhook delivery is server-to-server. The merchant webhook URL is supplied
     by the merchant and is not a SwiftPay public API path. Merchants should
-    verify the X-RexxPay-Signature HMAC-SHA512 signature against the exact raw
+    verify the X-SwiftPay-Signature HMAC-SHA512 signature against the exact raw
     request body, acknowledge valid events with HTTP 2xx, and make fulfillment
     idempotent because webhook delivery may be retried.
 
-    Test the integration with the Mock Bank endpoints only in development.
-    Disable or block the mock-bank simulation routes before production.
+    Test the integration in development using a test-mode checkout's
+    /checkout/{token}/simulate endpoint, which stands in for a real bank
+    transfer against a test-mode virtual account only.
   version: "2.0.0"
 servers:
   - url: /api/v1
@@ -515,29 +516,6 @@ paths:
       security: [{ AdminKeyAuth: [] }]
       responses:
         "200": { description: Pool status by bank }
-
-  /mock-bank/simulate-transfer:
-    post:
-      tags: [Mock Bank]
-      summary: >
-        Dev-only — simulates a customer's bank transfer by firing a signed
-        webhook to this server's own /webhooks/bank endpoint. Unauthenticated
-        by design. Must be disabled before production; the guard for that is
-        currently commented out in app.js.
-      responses:
-        "200": { description: Simulated transfer queued }
-
-  /mock-bank/simulate-transfer/{eventId}/status:
-    get:
-      tags: [Mock Bank]
-      summary: Dev-only — poll what happened to a simulated transfer's webhook
-      parameters:
-        - in: path
-          name: eventId
-          required: true
-          schema: { type: string }
-      responses:
-        "200": { description: Event/transaction status }
 
   /wallet:
     get:
@@ -1229,7 +1207,7 @@ paths:
   #   },
   #   "sentAt": "2026-08-12T00:00:00.000Z"
   # }
-  # Security: X-RexxPay-Signature = HMAC-SHA512(raw_request_body, webhook_secret).
+  # Security: X-SwiftPay-Signature = HMAC-SHA512(raw_request_body, webhook_secret).
   # Verify the signature against the exact raw request body before processing.
   # Fulfillment must be idempotent; duplicate webhook deliveries must not
   # double-charge, double-credit, decrement stock twice, or increment coupons twice.

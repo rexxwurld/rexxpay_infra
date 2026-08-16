@@ -1,6 +1,6 @@
 // src/modules/subscription/invoice.model.js
 //
-// An invoice is a bill for one billing cycle of a subscription. RexxPay
+// An invoice is a bill for one billing cycle of a subscription. SwiftPay
 // has no saved-card/token rail to auto-charge, so an invoice is settled
 // the same way any other inbound payment is: the customer pays into a
 // dedicated virtual account, and the webhook that lands on that account

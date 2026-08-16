@@ -27,21 +27,10 @@ const { enqueueWebhookEvent } = require('../../queue/webhookQueue');
 
 const MAX_ATTEMPTS = 5;
 
-/*
-|--------------------------------------------------------------------------
-| ENQUEUE WEBHOOK
-|--------------------------------------------------------------------------
-|
-| Persists the event, then hands it to the durable (Redis-backed)
-| BullMQ queue instead of firing an in-process setImmediate. If this
-| process crashes right after this call returns, the job survives in
-| Redis and a worker (any worker, on any instance) will still pick it
-| up - the old setImmediate-based approach lost the event entirely in
-| that scenario, recoverable only by the next server restart's
-| redriveStuckEvents() sweep.
-|
-*/
-
+// Persists the event, then hands it to the durable (Redis-backed) BullMQ
+// queue instead of firing an in-process setImmediate. If this process
+// crashes right after this call returns, the job survives in Redis and a
+// worker (any worker, on any instance) will still pick it up.
 async function enqueue({ rawBody, signature }) {
   const event = await WebhookEvent.create({
     rawBody,
@@ -52,20 +41,14 @@ async function enqueue({ rawBody, signature }) {
   try {
     await enqueueWebhookEvent(event._id);
   } catch (err) {
-    // If Redis itself is unreachable, fall back to redriveStuckEvents()
-    // picking this up on next boot rather than losing it silently -
-    // the event is already durably persisted in Mongo either way.
+    // If Redis itself is unreachable, the event is already durably
+    // persisted in Mongo, so redriveStuckEvents() will pick it up on
+    // next boot rather than losing it silently.
     logger.error({ err, eventId: event._id.toString() }, '[webhook.processor] failed to enqueue event onto durable queue');
   }
 
   return event;
 }
-
-/*
-|--------------------------------------------------------------------------
-| PROCESS WEBHOOK EVENT
-|--------------------------------------------------------------------------
-*/
 
 async function processEvent(eventId) {
   const event = await WebhookEvent.findById(eventId);
@@ -87,12 +70,6 @@ async function processEvent(eventId) {
       bankReference,
     } = event.rawBody;
 
-    /*
-    |--------------------------------------------------------------------------
-    | VALIDATE BANK EVENT
-    |--------------------------------------------------------------------------
-    */
-
     if (
       !accountNumber ||
       !Number.isInteger(amountReceived) ||
@@ -101,24 +78,11 @@ async function processEvent(eventId) {
       throw new Error('invalid_payload');
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | FIND VIRTUAL ACCOUNT
-    |--------------------------------------------------------------------------
-    */
-
     const account = await findByAccountNumber(accountNumber);
 
-    /*
-    |--------------------------------------------------------------------------
-    | ACCOUNT MUST STILL BE ASSIGNED
-    |--------------------------------------------------------------------------
-    |
-    | If the account is already deactivated, available, or otherwise no
-    | longer assigned, we MUST NOT credit another payment to it.
-    |
-    */
-
+    // The account must still be assigned - if it's already deactivated,
+    // available, or otherwise no longer assigned, we must not credit
+    // another payment to it.
     if (!account || account.status !== 'assigned') {
       await auditLog.record({
         actorType: 'system',
@@ -140,27 +104,13 @@ async function processEvent(eventId) {
       return;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | SAVE IMPORTANT ASSIGNMENT VALUES BEFORE PAYMENT PROCESSING
-    |--------------------------------------------------------------------------
-    |
-    | We capture these now because the account will be deactivated after
-    | successful settlement.
-    |
-    */
-
+    // Capture these now because the account will be deactivated after
+    // successful settlement.
     const merchantId = account.merchant;
     const customerId = account.customer;
     const virtualAccountId = account._id;
     const amountExpected = account.amountExpected ?? null;
     const merchantReference = account.reference;
-
-    /*
-    |--------------------------------------------------------------------------
-    | RECORD INCOMING PAYMENT
-    |--------------------------------------------------------------------------
-    */
 
     const {
       transaction,
@@ -176,36 +126,17 @@ async function processEvent(eventId) {
       bankReference,
     });
 
-    /*
-    |--------------------------------------------------------------------------
-    | PAYMENT SUCCESS
-    |--------------------------------------------------------------------------
-    */
-
     if (
-  !duplicate &&
-  (
-    transaction.status === 'success' ||
-    transaction.status === 'over'
-  )
-) {
-      /*
-      |--------------------------------------------------------------------------
-      | DEACTIVATE ACCOUNT
-      |--------------------------------------------------------------------------
-      |
-      | IMPORTANT:
-      |
-      | Do NOT release this account back to "available" here.
-      |
-      | Once this payment has been successfully processed, the account is
-      | consumed and becomes "deactivated".
-      |
-      | A separate cooldown/reactivation process will later move it back
-      | to the available pool.
-      |
-      */
-
+      !duplicate &&
+      (
+        transaction.status === 'success' ||
+        transaction.status === 'over'
+      )
+    ) {
+      // Once this payment has been successfully processed, the account
+      // is consumed and becomes "deactivated" - do NOT release it back
+      // to "available" here. A separate cooldown/reactivation process
+      // will later move it back to the available pool.
       try {
         await deactivateVirtualAccount({
           merchantId: merchantId._id || merchantId,
@@ -214,21 +145,10 @@ async function processEvent(eventId) {
 
         logger.info({ accountNumber }, '[webhook.processor] virtual account deactivated after payment');
       } catch (deactivateError) {
-        /*
-        |--------------------------------------------------------------------------
-        | IMPORTANT
-        |--------------------------------------------------------------------------
-        |
-        | The transaction has already been recorded.
-        |
-        | We therefore DO NOT throw here and cause the bank webhook to be
-        | processed again, because that could create confusion around an
-        | already-recorded transaction.
-        |
-        | Instead, log it as a critical operational issue.
-        |
-        */
-
+        // The transaction has already been recorded, so we don't throw
+        // here (that would cause the bank webhook to be reprocessed and
+        // risk confusion around an already-recorded transaction) -
+        // just log it as a critical operational issue.
         logger.error({ accountNumber, err: deactivateError }, '[webhook.processor] FAILED TO DEACTIVATE ACCOUNT');
 
         await auditLog.record({
@@ -245,26 +165,16 @@ async function processEvent(eventId) {
         });
       }
 
-      /*
-      |--------------------------------------------------------------------------
-      | MERCHANT WEBHOOK
-      |--------------------------------------------------------------------------
-      */
-
       const merchant = await Merchant.findById(merchantId);
 
       if (merchant) {
         dispatchMerchantWebhook(merchant, {
           type: 'transaction.success',
-
-          /*
-           * tx_ref is the merchant's own reference created during
-           * /payments/initialize.
-           *
-           * This allows the merchant to match the payment to its order.
-           */
           data: {
             ...transaction.toObject(),
+            // tx_ref is the merchant's own reference from
+            // /payments/initialize, so they can match the payment to
+            // their order.
             tx_ref: merchantReference,
           },
         }).catch((err) => {
@@ -272,22 +182,10 @@ async function processEvent(eventId) {
         });
       }
 
-      /*
-      |--------------------------------------------------------------------------
-      | INVOICE RECONCILIATION
-      |--------------------------------------------------------------------------
-      */
-
       markInvoicePaidByTransaction(transaction).catch((err) => {
         logger.error({ err, transactionId: transaction._id.toString() }, '[webhook.processor] failed to reconcile invoice for transaction');
       });
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | WEBHOOK EVENT COMPLETE
-    |--------------------------------------------------------------------------
-    */
 
     event.status = 'processed';
     event.processedAt = new Date();
@@ -295,21 +193,11 @@ async function processEvent(eventId) {
     await event.save();
 
   } catch (err) {
-    /*
-    |--------------------------------------------------------------------------
-    | RETRY HANDLING
-    |--------------------------------------------------------------------------
-    |
-    | Retry scheduling itself is now owned by BullMQ (see
-    | queue/webhookQueue.js's defaultJobOptions: 5 attempts, exponential
-    | backoff) - this function no longer schedules its own setTimeout.
-    | We still record status/lastError on the Mongo doc for
-    | visibility/audit, and we re-throw so BullMQ knows the job failed
-    | and should be retried (or moved to the failed set once its own
-    | attempts are exhausted).
-    |
-    */
-
+    // Retry scheduling is owned by BullMQ (see queue/webhookQueue.js's
+    // defaultJobOptions: 5 attempts, exponential backoff) - we still
+    // record status/lastError on the Mongo doc for visibility/audit,
+    // and re-throw so BullMQ knows the job failed and should be retried
+    // (or moved to the failed set once its own attempts are exhausted).
     event.lastError = err.message;
 
     event.status =
@@ -332,17 +220,9 @@ async function processEvent(eventId) {
       });
     }
 
-    // Re-throw so the BullMQ worker marks this job attempt as failed
-    // and applies its own backoff/attempts policy.
     throw err;
   }
 }
-
-/*
-|--------------------------------------------------------------------------
-| REDRIVE STUCK EVENTS
-|--------------------------------------------------------------------------
-*/
 
 async function redriveStuckEvents() {
   const stuck = await WebhookEvent.find({
@@ -353,8 +233,7 @@ async function redriveStuckEvents() {
 
   // Route redriven events back through the durable queue rather than
   // calling processEvent directly in-process, so they get the same
-  // BullMQ-managed attempts/backoff as any other event instead of a
-  // single unmanaged retry.
+  // BullMQ-managed attempts/backoff as any other event.
   for (const event of stuck) {
     await enqueueWebhookEvent(event._id).catch((err) => {
       logger.error({ err, eventId: event._id.toString() }, '[webhook.processor] failed to redrive stuck event onto durable queue');

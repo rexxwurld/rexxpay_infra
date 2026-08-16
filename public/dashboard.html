@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>RexxPay — Dashboard</title>
+<title>SwiftPay — Dashboard</title>
 
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
@@ -448,7 +448,7 @@
 <body class="dashboard-page">
 
 <nav class="dash-nav">
-  <a href="/" class="brand"><span class="dot"></span>RexxPay</a>
+  <a href="/" class="brand"><span class="dot"></span>SwiftPay</a>
   <div style="display:flex; align-items:center; gap:16px;">
     <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
   </div>
@@ -933,13 +933,13 @@
       <div class="panel">
         <div class="panel-head">
           <h2>Webhook URL</h2>
-          <span class="hint">RexxPay POSTs a signed transaction.success event here on every confirmed transfer</span>
+          <span class="hint">SwiftPay POSTs a signed transaction.success event here on every confirmed transfer</span>
         </div>
         <div class="panel-body">
           <form id="webhookForm" class="inline-form">
             <div class="field">
-              <label>https://your-store.com/rexxpay/webhook</label>
-              <input type="url" id="webhookUrlInput" placeholder="https://your-store.com/rexxpay/webhook" />
+              <label>https://your-store.com/swiftpay/webhook</label>
+              <input type="url" id="webhookUrlInput" placeholder="https://your-store.com/swiftpay/webhook" />
             </div>
             <button type="submit" class="btn btn-primary">Save</button>
           </form>

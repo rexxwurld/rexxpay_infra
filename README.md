@@ -1,4 +1,4 @@
-# SwiftPay 
+# SwiftPay
 
 A Paystack-style payment infrastructure: merchants integrate, onboard customers,
 get assigned dedicated virtual accounts, and receive verified webhook-driven
@@ -25,9 +25,10 @@ Merchant  --(secret key)-->  SwiftPay API  --(pool assignment)-->  Bank Partner
 
 The "Bank Partner" above is one of two things depending on environment:
 
-- **Mock bank partner** (`bankPartner` module + `/api/mock-bank/simulate-transfer`,
-  dev-only) — generates fake pool accounts locally and fires a self-signed
-  webhook, so the full loop can be tested without any external dependency.
+- **Mock bank partner** (`bankPartner` module + a test-mode checkout's
+  `POST /checkout/:token/simulate`, dev-only) — generates fake pool accounts
+  locally and fires a self-signed webhook, so the full loop can be tested
+  without any external dependency.
 - **RexxPay Bank** (real) — `bankPartner.service.js` can also provision real
   pool accounts from an external RexxPay Bank instance over HTTP, authenticated
   with `REXXPAY_BANK_ADMIN_KEY` against `REXXPAY_BANK_BASE_URL`. This is the
@@ -48,6 +49,7 @@ The "Bank Partner" above is one of two things depending on environment:
 | `payout` | Outbound transfers to merchants' real bank accounts |
 | `webhook` | Verifies bank partner signatures; the ONLY path that can mark a payment successful |
 | `admin` | Operator-only endpoints (behind `INFRA_ADMIN_KEY`) to provision the account pool and check pool health |
+| `demo` | Backs the public `/demo` page — a no-signup, test-mode-only checkout run against one dedicated, auto-provisioned demo merchant, so a visitor can try the flow without ever touching a real merchant's data |
 
 ### Key design decisions (and why)
 
@@ -75,8 +77,8 @@ must go.
 |---|---|
 | `ledger` | Double-entry bookkeeping (`LedgerEntry`). Every wallet credit/debit also posts a balanced debit+credit pair. `wallet.balance` is now a cache; the ledger is the source of truth and can rebuild any balance from history. |
 | `audit` | Append-only `AuditLog` — every webhook signature failure, flagged transaction, payout, and login writes a record. |
-| `webhook` (reworked) | The HTTP handler now only verifies the signature, persists the raw event (`WebhookEvent`), and acks. Actual processing happens async in `webhook.processor.js`, with retry/backoff and a `redriveStuckEvents()` call on startup for anything left mid-flight after a crash. This is the seam to swap in a real queue (SQS/BullMQ). |
-| `payout` | The outbound half of the system — merchants can request a payout to a real bank account. Debits the wallet, posts ledger entries, and calls a stubbed `sendToRealBank()` — swap that one function for a real disbursement provider and the rest (atomicity, limits, reversal-on-failure) is real. |
+| `webhook` (reworked) | The HTTP handler now only verifies the signature, persists the raw event (`WebhookEvent`), and acks. Actual processing happens async via a durable, Redis-backed BullMQ queue (`src/queue/webhookQueue.js` + `webhookWorker.js`), with retry/backoff owned by BullMQ and a `redriveStuckEvents()` call on startup that re-enqueues anything left mid-flight after a crash. |
+| `payout` | The outbound half of the system — merchants can request a payout to a real bank account. Debits the wallet, posts ledger entries, and calls `rexxPayBankClient.sendPayoutInstruction()`, which makes a real signed HTTP call to the RexxPay Bank instance (retries with backoff, and flags ambiguous outcomes so a network failure isn't silently treated as success or failure). Test-mode payouts instead hit `simulatePayoutInstruction()`, which makes no network call at all. |
 | `payment` | Hosted checkout on top of the existing virtual-account primitive — `initialize` creates the customer + account and hands back a link; `verify` reads back the transaction status by `tx_ref`. |
 | `admin` | HTTP-based operator tooling (`provision-pool`, `pool-status`) so the account pool can be managed without shell access, guarded by `INFRA_ADMIN_KEY`. |
 | `config/limits.js` + risk checks in `transaction.service.js` | Per-transaction, daily, and velocity limits. Transactions that exceed them land as `status: 'flagged'` instead of auto-crediting, for manual review. |
@@ -92,15 +94,9 @@ must go.
 
 ## Still not real (and why it's hard)
 
-- **`sendToRealBank()` in `payout.service.js`** always "succeeds." Wiring a
-  real disbursement provider means handling their actual async
-  success/pending/failure states, not just a boolean.
 - **`sanctionsCheck.js`** is exact-string-match against an env var — real
   screening needs fuzzy name matching against maintained watchlists via a
   licensed provider.
-- **The webhook queue is in-process** (`setImmediate` + `setTimeout`
-  backoff), not a durable broker — it won't survive the process being
-  killed mid-retry the way SQS/BullMQ would.
 - **No license.** None of the above makes this legally allowed to hold or
   move other people's money — that still requires a CBN license or a
   partnership with an already-licensed bank/PSB/MFB.
@@ -114,9 +110,9 @@ must go.
 | `index.html` | Marketing/landing page |
 | `onboarding.html` | Merchant register/login (`?tab=login` or `?tab=register`) |
 | `dashboard.html` | Logged-in merchant dashboard — wallet balance, transactions, API keys |
-| `pay.html` | Customer-facing checkout page rendered by the `payment.initialize` link; polls `GET /api/v1/checkout/:token/status` |
+| `pay.html` | Customer-facing checkout page rendered by the `payment.initialize` link; polls `GET /api/v1/checkout/:token/status`, and for test-mode checkouts offers a "simulate transfer" button that calls `POST /api/v1/checkout/:token/simulate` |
+| `demo.html` | Public, no-signup demo of the checkout flow, served at `/demo`; talks only to `POST /api/v1/demo/checkout` |
 | `admin.html` | Operator dashboard (pool status + manual provisioning), served at `/admin`; authenticates client-side against the `INFRA_ADMIN_KEY`-protected `/api/v1/admin/*` routes |
-| `simulate-transfer.html` | Dev-only page for firing `/api/v1/mock-bank/simulate-transfer` and polling its status without curl |
 
 ## Getting Started
 
@@ -150,7 +146,9 @@ must go.
      payment sits before it's eligible to settle, the extra hold before
      it's payable, and the max transactions processed per batch (see
      `npm run run-settlement`)
-3. `npm run dev`
+3. `npm run dev` — starts the API server
+4. `npm run worker:dev` — starts the BullMQ webhook worker (separate process; without
+   it, webhook events are persisted and queued but never processed)
 
 ## Scripts
 
@@ -175,27 +173,27 @@ automatically — no manual step needed for that one.
 
 ```bash
 # 1. Register a merchant (save the secretKey from the response)
-curl -X POST localhost:5000/api/auth/register \
+curl -X POST localhost:5000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"businessName":"Test Store","email":"a@b.com","password":"pass1234"}'
 
 # 2. Create a customer
-curl -X POST localhost:5000/api/customers \
+curl -X POST localhost:5000/api/v1/customers \
   -H "Authorization: Bearer sk_test_xxx" -H "Content-Type: application/json" \
   -d '{"fullName":"Jane Doe","email":"jane@example.com"}'
 
 # 3. Assign a virtual account to that customer
-curl -X POST localhost:5000/api/virtual-accounts \
+curl -X POST localhost:5000/api/v1/virtual-accounts \
   -H "Authorization: Bearer sk_test_xxx" -H "Content-Type: application/json" \
   -d '{"customerId":"<customer_id_from_step_2>"}'
 
-# 4. Simulate a customer paying into that account (dev-only route)
-curl -X POST localhost:5000/api/mock-bank/simulate-transfer \
-  -H "Content-Type: application/json" \
-  -d '{"accountNumber":"<account_number_from_step_3>","amount":500000}'
+# 4. To simulate a transfer without a real bank, use the hosted checkout
+# flow below instead — creating a virtual account directly (step 3) has no
+# standalone simulate shortcut anymore; only a real signed bank webhook
+# (POST /api/v1/webhooks/bank) can complete it.
 
 # 5. Check the wallet balance
-curl localhost:5000/api/wallet -H "Authorization: Bearer sk_test_xxx"
+curl localhost:5000/api/v1/wallet -H "Authorization: Bearer sk_test_xxx"
 ```
 
 ### Hosted checkout flow (alternative to steps 2–3 above)
@@ -203,12 +201,12 @@ curl localhost:5000/api/wallet -H "Authorization: Bearer sk_test_xxx"
 ```bash
 # Creates the customer + assigns a virtual account in one call, returns a
 # checkout link (pay.html) you can redirect the end customer to.
-curl -X POST localhost:5000/api/payments/initialize \
+curl -X POST localhost:5000/api/v1/payments/initialize \
   -H "Authorization: Bearer sk_test_xxx" -H "Content-Type: application/json" \
   -d '{"amount":5000,"customer":{"email":"jane@example.com","name":"Jane Doe"},"redirect_url":"https://example.com/thanks"}'
 
 # Poll for status by tx_ref once the customer has paid
-curl localhost:5000/api/payments/verify/<tx_ref> \
+curl localhost:5000/api/v1/payments/verify/<tx_ref> \
   -H "Authorization: Bearer sk_test_xxx"
 ```
 
@@ -242,9 +240,10 @@ note in `app.js`; not a permanent second contract).
 - POST /api/v1/virtual-accounts/:accountNumber/deactivate
 
 ### Checkout (public — no merchant API key; the customer never holds your secret key)
-- GET /pay/:checkoutToken  (serves the hosted `pay.html` page)
-- GET /api/v1/checkout/:token/status
-- GET /api/v1/checkout/:token/complete
+- GET  /pay/:checkoutToken  (serves the hosted `pay.html` page)
+- GET  /api/v1/checkout/:token/status
+- POST /api/v1/checkout/:token/simulate  (test-mode only — stands in for a real bank transfer; powers `pay.html`'s "simulate transfer" button)
+- GET  /api/v1/checkout/:token/complete
 
 ### Payments (hosted checkout — server-to-server, requires merchant API key)
 - POST /api/v1/payments/initialize
@@ -304,9 +303,8 @@ note in `app.js`; not a permanent second contract).
 - POST  /api/v1/admin/settlement/run  (`?currency=`, forces a settlement cycle now — the scheduled trigger is `npm run run-settlement`)
 - GET   /api/v1/admin/settlement/batches  (`?currency=&phase=&limit=`, inspect recent settlement batches)
 
-### Dev-only
-- POST /api/v1/mock-bank/simulate-transfer  (simulates a customer paying — the guard that disables this in production is currently commented out in `app.js`; the route itself is unauthenticated by design and its own header comment says to delete/disable it before production)
-- GET  /api/v1/mock-bank/simulate-transfer/:eventId/status  (polls what happened to a simulated transfer's webhook)
+### Demo (public — no signup, no API key)
+- POST /api/v1/demo/checkout  (runs a full test-mode checkout — virtual account → simulated bank transfer → success — against one dedicated demo merchant; rate-limited, capped at `DEMO_MAX_AMOUNT_MINOR`)
 
 ## Author
 

@@ -7,7 +7,7 @@ function generateTotpSecret() {
 }
 
 function buildOtpAuthUrl(email, secret) {
-  return authenticator.keyuri(email, 'RexxPay', secret);
+  return authenticator.keyuri(email, 'SwiftPay', secret);
 }
 
 function verifyTotpToken(secret, token) {

@@ -148,7 +148,7 @@
     <p>2. Use that key as a bearer token on every authenticated request.</p>
     <pre>curl /api/v1/wallet \
   -H "Authorization: Bearer sk_test_xxx"</pre>
-    <p>3. Verify payments server-to-server — never trust a browser redirect query on its own. Use <code>GET /payments/verify/{tx_ref}</code> and/or the signed <code>X-RexxPay-Signature</code> merchant webhook before fulfilling an order.</p>
+    <p>3. Verify payments server-to-server — never trust a browser redirect query on its own. Use <code>GET /payments/verify/{tx_ref}</code> and/or the signed <code>X-SwiftPay-Signature</code> merchant webhook before fulfilling an order.</p>
   </div>
 
   <div class="section-card">

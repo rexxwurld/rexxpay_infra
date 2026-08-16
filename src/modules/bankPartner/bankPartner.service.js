@@ -108,7 +108,7 @@ async function provisionRealAccountsFromBank(bank, count) {
 
   for (let i = 0; i < count; i++) {
     try {
-      const { accountNumber } = await createPoolAccountWithRetry(`RexxPay Infra pool account #${i + 1}`);
+      const { accountNumber } = await createPoolAccountWithRetry(`SwiftPay Infra pool account #${i + 1}`);
       created.push({ accountNumber, bank: bank._id, status: 'available', mode: 'live' });
     } catch (err) {
       errors.push(err.message);

@@ -4,7 +4,7 @@
 // sessionStorage (cleared when the tab closes) and is sent as the
 // x-admin-key header on every request, same as a curl/Postman call.
 
-const KEY_STORAGE = 'rexxpay_admin_key';
+const KEY_STORAGE = 'swiftpay_admin_key';
 
 function toast(msg, isErr = false) {
   const t = document.getElementById('toast');

@@ -39,7 +39,7 @@ async function start() {
   }
 
   app.listen(port, () => {
-    logger.info({ port }, '[server] RexxPay listening');
+    logger.info({ port }, '[server] SwiftPay listening');
   });
 }
 

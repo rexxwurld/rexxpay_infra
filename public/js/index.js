@@ -100,7 +100,7 @@ function init() {
 
   // ===== UPDATE FOOTER YEAR DYNAMICALLY =====
   document.querySelector('.footer-bottom span').textContent =
-    '©️ ' + new Date().getFullYear() + ' RexxPay. All rights reserved.';
+    '©️ ' + new Date().getFullYear() + ' SwiftPay. All rights reserved.';
 
 }
 

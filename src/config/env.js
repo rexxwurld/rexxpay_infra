@@ -26,7 +26,7 @@ module.exports = {
   rexxPayBankPayoutSecret: process.env.REXXPAY_BANK_PAYOUT_SECRET || process.env.BANK_WEBHOOK_SECRET,
 
   // Identifies this service to RexxPay Bank in payout instructions - must
-  // match the `linkedService` value RexxPay's Wallet/SettlementPool
+  // match the `linkedService` value SwiftPay's Wallet/SettlementPool
   // records use ("swiftpay").
   linkedServiceName: process.env.LINKED_SERVICE_NAME || 'swiftpay',
 };

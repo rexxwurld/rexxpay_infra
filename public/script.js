@@ -50,7 +50,7 @@ document.addEventListener("DOMContentLoaded", function () {
      DEVELOPER CODE SAMPLES
   ===================================================== */
   const codeSamples = {
-    CURL: `curl -X POST https://api.rexxpay.com/api/v1/payments \\
+    CURL: `curl -X POST https://checkout-rexxpay.onrender.com/api/v1/payments \\
   -H "Authorization: Bearer YOUR_SECRET_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -63,7 +63,7 @@ document.addEventListener("DOMContentLoaded", function () {
     Node: `const axios = require("axios");
 
 const response = await axios.post(
-  "https://api.rexxpay.com/api/v1/payments",
+  "https://checkout-rexxpay.onrender.com/api/v1/payments",
   {
     amount: 5000,
     currency: "NGN",
@@ -108,7 +108,7 @@ var content = new StringContent(
 );
 
 var response = await client.PostAsync(
-    "https://api.rexxpay.com/api/v1/payments",
+    "https://checkout-rexxpay.onrender.com/api/v1/payments",
     content
 );
 
@@ -118,7 +118,7 @@ Console.WriteLine(
 
     Python: `import requests
 
-url = "https://api.rexxpay.com/api/v1/payments"
+url = "https://checkout-rexxpay.onrender.com/api/v1/payments"
 
 headers = {
     "Authorization": "Bearer YOUR_SECRET_KEY",
@@ -278,9 +278,9 @@ print(response.json())`
   const footerText = document.querySelector(".footer-bottom span");
 
   if (footerText) {
-    footerText.textContent = `©️ ${new Date().getFullYear()} RexxPay. All rights reserved.`;
+    footerText.textContent = `©️ ${new Date().getFullYear()} SwiftPay. All rights reserved.`;
   }
 
-  console.log("RexxPay frontend JavaScript loaded successfully.");
+  console.log("SwiftPay frontend JavaScript loaded successfully.");
 
 });

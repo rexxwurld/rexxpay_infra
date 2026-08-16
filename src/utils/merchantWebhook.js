@@ -26,7 +26,7 @@ async function dispatchMerchantWebhook(merchant, event, attempt = 1) {
 
   try {
     await axios.post(merchant.webhookUrl, rawBody, {
-      headers: { 'Content-Type': 'application/json', 'X-RexxPay-Signature': signature },
+      headers: { 'Content-Type': 'application/json', 'X-SwiftPay-Signature': signature },
       timeout: TIMEOUT_MS,
       validateStatus: (status) => status >= 200 && status < 300,
     });

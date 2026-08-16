@@ -181,7 +181,7 @@
       () => {
         /*
          * The merchant redirect URL is NOT in this page's URL.
-         * RexxPay resolves it server-side.
+         * SwiftPay resolves it server-side.
          */
         window.location.href =
           `/api/checkout/${encodeURIComponent(

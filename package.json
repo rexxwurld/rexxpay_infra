@@ -1,7 +1,7 @@
 {
-  "name": "rexxpay",
+  "name": "swiftpay",
   "version": "2.0.0",
-  "description": "RexxPay - A Paystack-style payment infrastructure: merchants, customers, dedicated virtual accounts, mock bank partner, wallets, transactions and webhooks.",
+  "description": "SwiftPay - A Paystack-style payment infrastructure: merchants, customers, dedicated virtual accounts, mock bank partner, wallets, transactions and webhooks.",
   "main": "src/server.js",
   "type": "commonjs",
   "scripts": {

@@ -29,7 +29,6 @@ const checkoutRoutes = require('./modules/checkout/checkout.routes');
 const subscriptionRoutes = require('./modules/subscription/subscription.routes');
 const disputeRoutes = require('./modules/dispute/dispute.routes');
 const settlementRoutes = require('./modules/settlement/settlement.routes');
-const mockBankRoutes = require('./modules/mockBank/mockBank.routes');
 const demoRoutes = require('./modules/demo/demo.routes');
 
 const {
@@ -52,7 +51,7 @@ app.use(generalLimiter);
 
 // Hosted checkout.
 // Example:
-// https://rexxpay.com/pay/9d7f8c...
+// https://checkout-rexxpay.onrender.com/pay/9d7f8c...
 //
 // The token is the ONLY thing in the URL.
 app.get('/pay/:checkoutToken', (req, res) => {
@@ -119,7 +118,7 @@ const apiV1 = express.Router();
 apiV1.get('/', (req, res) => {
   res.json({
     status: true,
-    message: 'RexxPay API is running',
+    message: 'SwiftPay API is running',
     version: 'v1',
   });
 });
@@ -141,7 +140,6 @@ apiV1.use('/admin/settlement', settlementRoutes);
 apiV1.use('/payments', paymentRoutes);
 apiV1.use('/subscriptions', subscriptionRoutes);
 apiV1.use('/disputes', disputeRoutes);
-apiV1.use('/mock-bank', mockBankRoutes);
 apiV1.use('/demo', demoLimiter, demoRoutes);
 
 
