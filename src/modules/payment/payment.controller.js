@@ -5,8 +5,19 @@ async function initialize(req, res) {
   try {
     const { amount, customer, tx_ref, redirect_url } = req.body;
     const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+    if (req.merchant.mode !== 'test' && req.merchant.mode !== 'live') {
+      return res.status(401).json({ status: false, message: 'api_key_required_for_payments' });
+    }
+
     const result = await initializePayment({
-      merchantId: req.merchant.id, amount, customer, tx_ref, redirect_url, baseUrl,
+      merchantId: req.merchant.id,
+      amount,
+      customer,
+      tx_ref,
+      redirect_url,
+      baseUrl,
+      mode: req.merchant.mode,
     });
     res.status(201).json({ status: true, data: result });
   } catch (err) {
