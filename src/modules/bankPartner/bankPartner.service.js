@@ -18,23 +18,22 @@ async function ensureDefaultBankPartners() {
 // test-key checkout can never reach the real bank: it's not just
 // "gated at the controller", it's physically impossible to get a real
 // account number out of this function in test mode.
-async function provisionAccountPool(bankSlug, count = 20, mode = 'test') {
+//
+// Test-mode accounts are no longer pre-provisioned into a pool at all -
+// assignVirtualAccount mints a fresh, disposable one on demand for
+// every test checkout (see virtualAccount.service.js). Provisioning a
+// test pool here would just create orphaned VirtualAccount docs that
+// nothing ever queries, so this function only ever provisions the real
+// (live) pool now.
+async function provisionAccountPool(bankSlug, count = 20, mode = 'live') {
+  if (mode !== 'live') {
+    throw new Error(
+      'test_mode_accounts_are_minted_on_demand_and_do_not_need_provisioning'
+    );
+  }
+
   const bank = await BankPartner.findOne({ slug: bankSlug });
   if (!bank) throw new Error(`Unknown bank partner: ${bankSlug}`);
-
-  if (mode !== 'live') {
-    const accounts = [];
-    for (let i = 0; i < count; i++) {
-      accounts.push({
-        accountNumber: generateAccountNumber(),
-        bank: bank._id,
-        status: 'available',
-        mode: 'test',
-      });
-    }
-    await VirtualAccount.insertMany(accounts, { ordered: false }).catch(() => {});
-    return bank;
-  }
 
   if (bankSlug === 'rexxpay-bank') {
     return provisionRealAccountsFromBank(bank, count);
