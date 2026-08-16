@@ -5,11 +5,14 @@ const { normalizeCurrency } = require('../../config/currencies');
 async function getWallet(req, res) {
   try {
     const currency = normalizeCurrency(req.query.currency || 'NGN');
-    // Dashboard/session logins have no key-derived mode - default those
-    // reads to 'live' since that's what a merchant expects to see when
-    // just logged into their dashboard. API-key calls use whatever mode
-    // the key itself was for.
-    const mode = req.merchant.mode || 'live';
+    // API-key calls are pinned to whatever mode the key itself is for -
+    // a test key can never be redirected to the live wallet via a query
+    // param. Only session (dashboard) logins, which have no key-derived
+    // mode, honor ?mode= - that's what the dashboard's test/live toggle
+    // sends. Defaults to 'test' if the param is missing/invalid, same
+    // fail-closed default as wallet.service.
+    const requestedMode = req.query.mode === 'live' ? 'live' : 'test';
+    const mode = req.merchant.mode || requestedMode;
     const wallet = await getOrCreateWallet(req.merchant.id, currency, mode);
     res.json({ status: true, data: wallet });
   } catch (err) {
