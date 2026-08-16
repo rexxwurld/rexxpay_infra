@@ -7,12 +7,6 @@ const { postDoubleEntry } = require('../ledger/ledger.service');
 const auditLog = require('../audit/auditLog.service');
 const limits = require('../../config/limits');
 
-// Opens a dispute and immediately FREEZES the disputed amount out of the
-// merchant's wallet into the 'suspense' ledger account - the ledger
-// schema already reserved this accountType for exactly this case, it was
-// just never posted to. Freezing on open (not on resolution) matches how
-// real card-network chargebacks work: the money leaves the merchant the
-// moment the claim is filed, not after it's decided.
 async function openDispute({ merchantId, transactionId, amount, reason, reasonDetail }) {
   const transaction = await Transaction.findById(transactionId);
   if (!transaction) throw new Error('transaction_not_found');
@@ -28,6 +22,7 @@ async function openDispute({ merchantId, transactionId, amount, reason, reasonDe
     throw new Error('invalid_dispute_amount');
   }
 
+  const mode = transaction.mode || 'live';
   const evidenceDueBy = new Date(Date.now() + limits.DISPUTE_EVIDENCE_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
   const session = await mongoose.startSession();
@@ -35,11 +30,7 @@ async function openDispute({ merchantId, transactionId, amount, reason, reasonDe
   try {
     session.startTransaction();
 
-    // Freeze first, inside the same DB transaction as the Dispute record
-    // and ledger entries - same pattern as refunds/payouts. If the
-    // merchant's wallet doesn't hold the funds, this throws and nothing
-    // is created.
-    await debitWallet(merchantId, disputeAmount, session, transaction.currency);
+    await debitWallet(merchantId, disputeAmount, session, transaction.currency, mode);
 
     const [created] = await Dispute.create(
       [
@@ -48,6 +39,7 @@ async function openDispute({ merchantId, transactionId, amount, reason, reasonDe
           transaction: transactionId,
           amount: disputeAmount,
           currency: transaction.currency,
+          mode,
           reason: reason || 'other',
           reasonDetail: reasonDetail || null,
           status: 'open',
@@ -84,7 +76,7 @@ async function openDispute({ merchantId, transactionId, amount, reason, reasonDe
     entityType: 'Dispute',
     entityRef: dispute._id.toString(),
     severity: 'critical',
-    metadata: { transactionId, amount: disputeAmount, reason },
+    metadata: { transactionId, amount: disputeAmount, reason, mode },
   });
 
   return dispute;
@@ -113,11 +105,6 @@ async function submitEvidence({ merchantId, disputeId, description, url }) {
   return dispute;
 }
 
-// Admin-only resolution. 'won' releases the frozen funds back to the
-// merchant's wallet. 'lost' leaves them out of the merchant's wallet
-// permanently and moves them from suspense to platform_clearing, where
-// a real integration would actually wire the funds back to the card
-// network/customer's bank.
 async function resolveDispute({ disputeId, outcome, resolution }) {
   if (!['won', 'lost'].includes(outcome)) throw new Error('invalid_outcome');
 
@@ -132,7 +119,7 @@ async function resolveDispute({ disputeId, outcome, resolution }) {
     session.startTransaction();
 
     if (outcome === 'won') {
-      await creditWallet(dispute.merchant, dispute.amount, session, dispute.currency);
+      await creditWallet(dispute.merchant, dispute.amount, session, dispute.currency, dispute.mode || 'live');
       await postDoubleEntry({
         entryGroup: `dispute_resolution_${dispute._id}`,
         amount: dispute.amount,
