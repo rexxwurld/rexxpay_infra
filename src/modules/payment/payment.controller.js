@@ -9,7 +9,7 @@ async function initialize(req, res) {
     // Session-authenticated dashboard requests have mode === null.
     // Default them to test mode, same as Paystack/Flutterwave dashboards
     // do until a merchant is verified/activated for live payments.
-    const mode = req.merchant.mode || 'test';
+    const mode = req.merchant.mode || 'live';
 
     const result = await initializePayment({
       merchantId: req.merchant.id,
