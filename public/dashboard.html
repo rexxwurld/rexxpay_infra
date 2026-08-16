@@ -140,6 +140,42 @@
   }
   .mode-badge.live { background: var(--green-bg); color: var(--green); border-color: #bbf0d0; }
 
+  .mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    background: var(--sky-lighter);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+  }
+  .mode-toggle button {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 16px;
+    background: transparent;
+    color: var(--ink-dim);
+    cursor: pointer;
+  }
+  .mode-toggle button.active {
+    background: var(--white);
+    color: var(--sky-darker);
+    box-shadow: 0 1px 3px rgba(15, 33, 51, 0.12);
+  }
+  .mode-toggle button.active.live {
+    color: var(--green);
+  }
+  .mode-toggle-note {
+    font-size: 11.5px;
+    color: var(--ink-dim);
+    margin-top: 6px;
+  }
+
   .ledger-tag {
     display: flex;
     align-items: center;
@@ -379,7 +415,13 @@
 
 <nav class="dash-nav">
   <a href="/" class="brand"><span class="dot"></span>RexxPay</a>
-  <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
+  <div style="display:flex; align-items:center; gap:16px;">
+    <div class="mode-toggle" id="modeToggle" role="group" aria-label="Viewing mode">
+      <button type="button" id="modeToggleTest" data-mode="test">Test</button>
+      <button type="button" id="modeToggleLive" class="live" data-mode="live">Live</button>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="logoutBtn">Log out</button>
+  </div>
 </nav>
 
 <div class="dash-shell">
@@ -388,6 +430,7 @@
     <div>
       <h1 id="bizName">—<span class="mode-badge" id="modeBadge">test mode</span></h1>
       <div class="biz" id="bizEmail"></div>
+      <div class="mode-toggle-note" id="modeToggleNote"></div>
     </div>
     <div class="ledger-tag"><span class="dot"></span>Balance reconciled from ledger</div>
   </div>
