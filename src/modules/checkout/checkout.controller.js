@@ -1,5 +1,6 @@
 const Checkout = require('./checkout.model');
 const Transaction = require('../transaction/transaction.model');
+const { simulateBankTransfer } = require('../mockBank/mockBank.service');
 
 async function getStatus(req, res) {
   try {
@@ -61,6 +62,10 @@ async function getStatus(req, res) {
         bankName: checkout.bankName,
         amountExpected: checkout.amountExpected,
 
+        // Lets pay.html decide whether to show the "simulate transfer"
+        // button - only ever true for a test-mode checkout, never live.
+        mode: checkout.mode,
+
         paymentStatus,
 
         amountReceived:
@@ -73,6 +78,61 @@ async function getStatus(req, res) {
     return res.status(500).json({
       status: false,
       message: 'checkout_status_failed',
+    });
+  }
+}
+
+
+// Lets a visitor on the hosted pay.html page complete a TEST-mode
+// checkout themselves, since no real bank webhook will ever arrive for
+// a fake test account number. Public like getStatus/complete above -
+// the unguessable checkout token is the auth, same trust model already
+// used for this whole route file. simulateBankTransfer independently
+// re-checks the account is mode:'test' before doing anything, so even a
+// bug here can't touch a live checkout.
+async function simulate(req, res) {
+  try {
+    const { token } = req.params;
+
+    const checkout = await Checkout.findOne({ token });
+
+    if (!checkout) {
+      return res.status(404).json({
+        status: false,
+        message: 'checkout_not_found',
+      });
+    }
+
+    if (checkout.mode !== 'test') {
+      return res.status(403).json({
+        status: false,
+        message: 'simulate_only_available_for_test_mode_checkouts',
+      });
+    }
+
+    if (Date.now() > checkout.expiresAt.getTime()) {
+      return res.status(410).json({
+        status: false,
+        message: 'checkout_expired',
+      });
+    }
+
+    const result = await simulateBankTransfer({
+      accountNumber: checkout.accountNumber,
+    });
+
+    return res.json({
+      status: true,
+      data: {
+        paymentStatus: result.transaction?.status || 'pending',
+      },
+    });
+  } catch (err) {
+    console.error('[checkout] simulate error:', err);
+
+    return res.status(400).json({
+      status: false,
+      message: err.message,
     });
   }
 }
@@ -152,5 +212,6 @@ async function complete(req, res) {
 
 module.exports = {
   getStatus,
+  simulate,
   complete,
 };
