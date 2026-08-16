@@ -6,34 +6,18 @@ const Customer = require('../customer/customer.model');
 const { provisionAccountPool, assignBankPoolAccount, deactivateBankPoolAccount, releaseBankPoolAccount } = require('../bankPartner/bankPartner.service');
 const { findActiveByCodeForMerchant } = require('../subaccount/subaccount.service');
 
-/*
-|--------------------------------------------------------------------------
-| CONFIG
-|--------------------------------------------------------------------------
-|
-| How long a successfully used account stays deactivated before it can
-| return to the available pool.
-|
-| Change this later according to your bank/provider's actual rules.
-|
-*/
 const ACCOUNT_COOLDOWN_MINUTES = 60;
 
 function generateCheckoutToken() {
   return crypto.randomBytes(32).toString('hex');
 }
 
-/*
-|--------------------------------------------------------------------------
-| ASSIGN VIRTUAL ACCOUNT
-|--------------------------------------------------------------------------
-|
-| Only accounts with status = "available" can be assigned.
-|
-| Deactivated accounts are NEVER eligible here, even if their cooldown
-| has expired. They must first pass through reactivateExpiredAccounts().
-|
-*/
+// Reads mode off the account itself, defaulting historical (pre-field)
+// docs to 'live' since that's what they always were.
+function isLive(account) {
+  return (account.mode || 'live') === 'live';
+}
+
 async function assignVirtualAccount({
   merchantId,
   customerId,
@@ -42,63 +26,41 @@ async function assignVirtualAccount({
   reference,
   subaccountCode,
   splitPercentage,
+  mode = 'test', // fail-safe default: fake accounts, never the real bank
 }) {
-  const customer = await Customer.findOne({
-    _id: customerId,
-    merchant: merchantId,
-  });
+  const resolvedMode = mode === 'live' ? 'live' : 'test';
 
+  const customer = await Customer.findOne({ _id: customerId, merchant: merchantId });
   if (!customer) {
     throw new Error('customer_not_found');
   }
 
   if (amount != null && (!Number.isInteger(amount) || amount <= 0)) {
-    throw new Error(
-      'amount_must_be_a_positive_integer_in_minor_units'
-    );
+    throw new Error('amount_must_be_a_positive_integer_in_minor_units');
   }
 
   let splitSubaccount = null;
   let resolvedSplitPercentage = null;
 
   if (subaccountCode) {
-    const subaccount = await findActiveByCodeForMerchant(
-      merchantId,
-      subaccountCode
-    );
-
+    const subaccount = await findActiveByCodeForMerchant(merchantId, subaccountCode);
     if (!subaccount) {
       throw new Error('unknown_or_inactive_subaccount');
     }
-
-    resolvedSplitPercentage =
-      splitPercentage ?? subaccount.defaultSplitPercentage;
-
-    if (
-      !Number.isFinite(resolvedSplitPercentage) ||
-      resolvedSplitPercentage <= 0 ||
-      resolvedSplitPercentage > 100
-    ) {
+    resolvedSplitPercentage = splitPercentage ?? subaccount.defaultSplitPercentage;
+    if (!Number.isFinite(resolvedSplitPercentage) || resolvedSplitPercentage <= 0 || resolvedSplitPercentage > 100) {
       throw new Error('invalid_split_percentage');
     }
-
     splitSubaccount = subaccount._id;
   }
 
   let bankFilter = {};
-
   if (preferredBankSlug) {
-    const bank = await BankPartner.findOne({
-      slug: preferredBankSlug,
-    });
-
+    const bank = await BankPartner.findOne({ slug: preferredBankSlug });
     if (!bank) {
       throw new Error('unknown_bank_partner');
     }
-
-    bankFilter = {
-      bank: bank._id,
-    };
+    bankFilter = { bank: bank._id };
   }
 
   const checkoutToken = generateCheckoutToken();
@@ -108,55 +70,31 @@ async function assignVirtualAccount({
     merchant: merchantId,
     customer: customerId,
     assignedAt: new Date(),
-
-    // Clear any old lifecycle information.
     deactivatedAt: null,
     cooldownUntil: null,
-
     amountExpected: amount ?? null,
     reference: reference ?? null,
-
     splitSubaccount,
     splitPercentage: resolvedSplitPercentage,
   };
 
-  /*
-  |--------------------------------------------------------------------------
-  | FIRST ATTEMPT
-  |--------------------------------------------------------------------------
-  */
-
+  // Pool accounts are grabbed only from the SAME mode as the request -
+  // a live checkout can never be handed a fake test account, and a test
+  // checkout can never be handed a real bank-backed one.
   let account = await VirtualAccount.findOneAndUpdate(
-    {
-      status: 'available',
-      ...bankFilter,
-    },
+    { status: 'available', mode: resolvedMode, ...bankFilter },
     assignment,
-    {
-      new: true,
-    }
+    { new: true }
   ).populate('bank');
-
-  /*
-  |--------------------------------------------------------------------------
-  | POOL RAN DRY
-  |--------------------------------------------------------------------------
-  */
 
   if (!account) {
     const bankSlug = preferredBankSlug || 'rexxpay-bank';
-
-    await provisionAccountPool(bankSlug, 20);
+    await provisionAccountPool(bankSlug, 20, resolvedMode);
 
     account = await VirtualAccount.findOneAndUpdate(
-      {
-        status: 'available',
-        ...bankFilter,
-      },
+      { status: 'available', mode: resolvedMode, ...bankFilter },
       assignment,
-      {
-        new: true,
-      }
+      { new: true }
     ).populate('bank');
   }
 
@@ -164,95 +102,33 @@ async function assignVirtualAccount({
     throw new Error('no_accounts_available');
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | LINK CUSTOMER TO ACCOUNT
-  |--------------------------------------------------------------------------
-  */
-
   customer.virtualAccount = account._id;
   await customer.save();
 
-  /*
-  |--------------------------------------------------------------------------
-  | TELL THE REAL BANK THIS ACCOUNT IS NOW ASSIGNED
-  |--------------------------------------------------------------------------
-  |
-  | Without this, RexxPay Bank's own wallet.status stays "available"
-  | forever, and any deposit landing on it gets rejected with
-  | "wallet_not_currently_assigned" even though SwiftPay thinks it's
-  | correctly assigned.
-  |
-  */
+  // Only tell the REAL bank about assignment if this is a real account.
+  // Test-mode accounts never make a network call to RexxPay Bank at all.
+  if (isLive(account)) {
+    await assignBankPoolAccount(account.accountNumber);
+  }
 
-  await assignBankPoolAccount(account.accountNumber);
-
-  return {
-    account,
-    checkoutToken,
-  };
+  return { account, checkoutToken };
 }
 
-/*
-|--------------------------------------------------------------------------
-| DEACTIVATE AFTER SUCCESSFUL PAYMENT
-|--------------------------------------------------------------------------
-|
-| IMPORTANT:
-|
-| This is NOT the same as immediately releasing the account.
-|
-| The account becomes:
-|
-| assigned → deactivated
-|
-| It stays unavailable during the cooldown.
-|
-*/
 async function releaseVirtualAccount(accountId) {
   const account = await VirtualAccount.findById(accountId);
-
   if (!account) {
     return null;
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | ONLY ASSIGNED ACCOUNTS CAN BE CONSUMED
-  |--------------------------------------------------------------------------
-  */
-
   if (account.status !== 'assigned') {
     return account;
   }
 
   const now = new Date();
-
-  const cooldownUntil = new Date(
-    now.getTime() +
-      ACCOUNT_COOLDOWN_MINUTES * 60 * 1000
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | DEACTIVATE ACCOUNT
-  |--------------------------------------------------------------------------
-  */
+  const cooldownUntil = new Date(now.getTime() + ACCOUNT_COOLDOWN_MINUTES * 60 * 1000);
 
   account.status = 'deactivated';
-
   account.deactivatedAt = now;
   account.cooldownUntil = cooldownUntil;
-
-  /*
-  |--------------------------------------------------------------------------
-  | CLEAR PAYMENT ASSIGNMENT DATA
-  |--------------------------------------------------------------------------
-  |
-  | The account is no longer attached to the completed order.
-  |
-  */
-
   account.merchant = null;
   account.customer = null;
   account.assignedAt = null;
@@ -263,114 +139,41 @@ async function releaseVirtualAccount(accountId) {
 
   await account.save();
 
-  /*
-  |--------------------------------------------------------------------------
-  | REMOVE CUSTOMER'S ACTIVE VIRTUAL ACCOUNT LINK
-  |--------------------------------------------------------------------------
-  */
+  await Customer.updateOne({ virtualAccount: account._id }, { virtualAccount: null });
 
-  await Customer.updateOne(
-    {
-      virtualAccount: account._id,
-    },
-    {
-      virtualAccount: null,
-    }
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | TELL THE REAL BANK THIS ACCOUNT IS NOW IN COOLDOWN
-  |--------------------------------------------------------------------------
-  |
-  | Not "assigned" (checkout is over) and not "available" (still cooling
-  | down) - deactivate makes that honest on the bank's side too, while
-  | still rejecting any deposit that lands here before reactivation.
-  |
-  */
-
-  await deactivateBankPoolAccount(account.accountNumber);
-
-  /*
-  |--------------------------------------------------------------------------
-  | IMPORTANT
-  |--------------------------------------------------------------------------
-  |
-  | We DO NOT set:
-  |
-  | account.status = 'available'
-  |
-  | here.
-  |
-  | The account remains deactivated until the cooldown worker reactivates
-  | it.
-  |
-  */
+  if (isLive(account)) {
+    await deactivateBankPoolAccount(account.accountNumber);
+  }
 
   return account;
 }
 
-/*
-|--------------------------------------------------------------------------
-| RELEASE STALE ASSIGNED ACCOUNTS
-|--------------------------------------------------------------------------
-|
-| This is for payments/checkouts that were assigned an account but never
-| completed.
-|
-| These accounts can safely return to the pool according to the existing
-| stale-assignment policy.
-|
-*/
 async function releaseStaleAssignedAccounts(maxAgeMinutes) {
-  const cutoff = new Date(
-    Date.now() - maxAgeMinutes * 60 * 1000
-  );
+  const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000);
 
-  const stale = await VirtualAccount.find({
-    status: 'assigned',
-    assignedAt: {
-      $lte: cutoff,
-    },
-  });
+  const stale = await VirtualAccount.find({ status: 'assigned', assignedAt: { $lte: cutoff } });
 
   let released = 0;
 
   for (const account of stale) {
-    /*
-     * These were never successfully paid, so they can return directly
-     * to the available pool.
-     */
     account.status = 'available';
-
     account.merchant = null;
     account.customer = null;
     account.assignedAt = null;
-
     account.deactivatedAt = null;
     account.cooldownUntil = null;
-
     account.amountExpected = null;
     account.reference = null;
-
     account.splitSubaccount = null;
     account.splitPercentage = null;
 
     await account.save();
 
-    await Customer.updateOne(
-      {
-        virtualAccount: account._id,
-      },
-      {
-        virtualAccount: null,
-      }
-    );
+    await Customer.updateOne({ virtualAccount: account._id }, { virtualAccount: null });
 
-    // These go straight back to "available" without a cooldown, so tell
-    // the bank now - unlike releaseVirtualAccount's cooldown path, there's
-    // no reactivateExpiredAccounts step coming later to do it instead.
-    await releaseBankPoolAccount(account.accountNumber);
+    if (isLive(account)) {
+      await releaseBankPoolAccount(account.accountNumber);
+    }
 
     released += 1;
   }
@@ -378,54 +181,24 @@ async function releaseStaleAssignedAccounts(maxAgeMinutes) {
   return released;
 }
 
-/*
-|--------------------------------------------------------------------------
-| REACTIVATE EXPIRED COOLDOWN ACCOUNTS
-|--------------------------------------------------------------------------
-|
-| Finds accounts whose cooldown has expired and returns them to the pool.
-|
-| deactivated → available
-|
-| This function should be called by a scheduled worker/cron.
-|
-*/
 async function reactivateExpiredAccounts() {
   const now = new Date();
 
   const accounts = await VirtualAccount.find({
     status: 'deactivated',
-    cooldownUntil: {
-      $ne: null,
-      $lte: now,
-    },
+    cooldownUntil: { $ne: null, $lte: now },
   });
 
   let reactivated = 0;
 
   for (const account of accounts) {
-    /*
-    |--------------------------------------------------------------------------
-    | EXTRA SAFETY
-    |--------------------------------------------------------------------------
-    |
-    | Only reactivate an account that is actually in the expected state.
-    |
-    */
-
-    if (
-      account.status !== 'deactivated' ||
-      !account.cooldownUntil ||
-      account.cooldownUntil > now
-    ) {
+    if (account.status !== 'deactivated' || !account.cooldownUntil || account.cooldownUntil > now) {
       continue;
     }
 
     account.status = 'available';
-
     account.deactivatedAt = null;
     account.cooldownUntil = null;
-
     account.merchant = null;
     account.customer = null;
     account.assignedAt = null;
@@ -436,12 +209,9 @@ async function reactivateExpiredAccounts() {
 
     await account.save();
 
-    // Cooldown just ended and the account is back in the available pool -
-    // tell the bank now. (During the cooldown itself, the bank is
-    // deliberately left showing "assigned" so a late/stray deposit still
-    // gets rejected rather than silently credited - see
-    // deposit.service.js on the bank side.)
-    await releaseBankPoolAccount(account.accountNumber);
+    if (isLive(account)) {
+      await releaseBankPoolAccount(account.accountNumber);
+    }
 
     reactivated += 1;
   }
@@ -449,82 +219,30 @@ async function reactivateExpiredAccounts() {
   return reactivated;
 }
 
-/*
-|--------------------------------------------------------------------------
-| MANUAL / PROVIDER DEACTIVATION
-|--------------------------------------------------------------------------
-|
-| Keeps your existing explicit deactivation functionality.
-|
-| This does NOT start a cooldown because this function is an administrative
-| operation, not the successful-payment lifecycle.
-|
-*/
-async function deactivateVirtualAccount({
-  merchantId,
-  accountNumber,
-}) {
-  const account = await VirtualAccount.findOne({
-    accountNumber,
-    merchant: merchantId,
-  });
-
+async function deactivateVirtualAccount({ merchantId, accountNumber }) {
+  const account = await VirtualAccount.findOne({ accountNumber, merchant: merchantId });
   if (!account) {
     throw new Error('account_not_found');
   }
 
   account.status = 'deactivated';
-
-  /*
-   * Manual deactivation does not automatically make it available later.
-   * A separate admin/provider action can reactivate it.
-   */
   account.deactivatedAt = new Date();
   account.cooldownUntil = null;
 
   await account.save();
 
-  await Customer.updateOne(
-    {
-      virtualAccount: account._id,
-    },
-    {
-      virtualAccount: null,
-    }
-  );
+  await Customer.updateOne({ virtualAccount: account._id }, { virtualAccount: null });
 
   return account;
 }
 
-/*
-|--------------------------------------------------------------------------
-| FIND BY ACCOUNT NUMBER
-|--------------------------------------------------------------------------
-*/
-
 async function findByAccountNumber(accountNumber) {
-  return VirtualAccount.findOne({
-    accountNumber,
-  }).populate('bank merchant customer');
+  return VirtualAccount.findOne({ accountNumber }).populate('bank merchant customer');
 }
-
-/*
-|--------------------------------------------------------------------------
-| FIND BY REFERENCE
-|--------------------------------------------------------------------------
-*/
 
 async function findByReference(reference) {
-  return VirtualAccount.findOne({
-    reference,
-  }).populate('bank merchant customer');
+  return VirtualAccount.findOne({ reference }).populate('bank merchant customer');
 }
-
-/*
-|--------------------------------------------------------------------------
-| EXPORTS
-|--------------------------------------------------------------------------
-*/
 
 module.exports = {
   assignVirtualAccount,
