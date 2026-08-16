@@ -52,7 +52,12 @@ async function createBulk(req, res) {
 
 async function list(req, res) {
   try {
-    const payouts = await listForMerchant(req.merchant.id, req.merchant.mode || null);
+    // Same pattern as wallet/transactions: API keys are pinned to their
+    // own mode; session logins honor ?mode= from the dashboard toggle,
+    // defaulting to 'test'.
+    const requestedMode = req.query.mode === 'live' ? 'live' : 'test';
+    const mode = req.merchant.mode || requestedMode;
+    const payouts = await listForMerchant(req.merchant.id, mode);
     res.json({ status: true, data: payouts });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });
