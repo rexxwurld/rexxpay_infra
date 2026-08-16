@@ -99,7 +99,7 @@ function renderPoolTable(rows) {
 
   // Only the LIVE pool is a real operational resource - test accounts
   // are generated on demand for free (see provisionAccountPool), so
-  // "low" only ever applies to live.
+  // there's nothing to show for test here.
   body.innerHTML = rows.map((r) => {
     const low = r.live.available <= LOW_THRESHOLD;
     return `
@@ -108,8 +108,6 @@ function renderPoolTable(rows) {
         <td class="mono">${r.live.available}</td>
         <td class="mono">${r.live.assigned}</td>
         <td><span class="pill ${low ? 'low' : 'ok'}">${low ? 'Low' : 'Healthy'}</span></td>
-        <td class="mono">${r.test.available}</td>
-        <td class="mono">${r.test.assigned}</td>
       </tr>
     `;
   }).join('');
