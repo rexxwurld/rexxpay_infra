@@ -52,8 +52,14 @@ router.get('/pool-status', requireAdminKey, async (req, res) => {
     const byBank = await Promise.all(
       banks.map(async (bank) => ({
         bank: bank.slug,
-        available: await VirtualAccount.countDocuments({ bank: bank._id, status: 'available' }),
-        assigned: await VirtualAccount.countDocuments({ bank: bank._id, status: 'assigned' }),
+        live: {
+          available: await VirtualAccount.countDocuments({ bank: bank._id, status: 'available', mode: 'live' }),
+          assigned: await VirtualAccount.countDocuments({ bank: bank._id, status: 'assigned', mode: 'live' }),
+        },
+        test: {
+          available: await VirtualAccount.countDocuments({ bank: bank._id, status: 'available', mode: 'test' }),
+          assigned: await VirtualAccount.countDocuments({ bank: bank._id, status: 'assigned', mode: 'test' }),
+        },
       }))
     );
     res.json({ status: true, data: byBank });
