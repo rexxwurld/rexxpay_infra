@@ -9,6 +9,7 @@ const {
   generalLimiter,
   authLimiter,
   webhookLimiter,
+  demoLimiter,
 } = require('./middleware/rateLimit.middleware');
 
 const authRoutes = require('./modules/auth/auth.routes');
@@ -29,6 +30,7 @@ const subscriptionRoutes = require('./modules/subscription/subscription.routes')
 const disputeRoutes = require('./modules/dispute/dispute.routes');
 const settlementRoutes = require('./modules/settlement/settlement.routes');
 const mockBankRoutes = require('./modules/mockBank/mockBank.routes');
+const demoRoutes = require('./modules/demo/demo.routes');
 
 const {
   notFound,
@@ -60,6 +62,20 @@ app.get('/pay/:checkoutToken', (req, res) => {
       '..',
       'public',
       'pay.html'
+    )
+  );
+});
+
+// Public, no-signup-required demo of the checkout flow. Talks only to
+// POST /api/demo/checkout (see demo.routes.js), which is test-mode-only
+// and scoped to one dedicated demo merchant.
+app.get('/demo', (req, res) => {
+  res.sendFile(
+    path.join(
+      __dirname,
+      '..',
+      'public',
+      'demo.html'
     )
   );
 });
@@ -126,6 +142,7 @@ apiV1.use('/payments', paymentRoutes);
 apiV1.use('/subscriptions', subscriptionRoutes);
 apiV1.use('/disputes', disputeRoutes);
 apiV1.use('/mock-bank', mockBankRoutes);
+apiV1.use('/demo', demoLimiter, demoRoutes);
 
 
 
