@@ -7,10 +7,6 @@ const { debitWallet, creditWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
 const auditLog = require('../audit/auditLog.service');
 
-// NOTE: same stub pattern as payout.service.js's sendToRealBank. Wiring
-// this to a real disbursement provider is the actual "send money out"
-// step - everything upstream of this line (limits, ledger, atomicity,
-// idempotency) is real.
 async function sendRefundToBank(refund) {
   return { success: true, providerRef: `sim_${refund.reference}` };
 }
@@ -27,7 +23,7 @@ async function requestRefund({
   const transaction = await Transaction.findById(transactionId);
   if (!transaction) throw new Error('transaction_not_found');
   if (transaction.merchant.toString() !== merchantId.toString()) {
-    throw new Error('transaction_not_found'); // don't leak existence across merchants
+    throw new Error('transaction_not_found');
   }
   if (!['success', 'partial', 'over'].includes(transaction.status)) {
     throw new Error('transaction_not_refundable');
@@ -36,11 +32,8 @@ async function requestRefund({
     throw new Error('destination_account_required');
   }
 
-  // A transaction can be partially refunded more than once, but never
-  // refunded past what it actually received. 'pending'/'processing'
-  // refunds count against the limit too, so two concurrent refund
-  // requests can't both succeed and over-refund - the ledger's unique
-  // idempotency index is the hard backstop, this is the friendly check.
+  const mode = transaction.mode || 'live';
+
   const priorRefunds = await Refund.find({
     transaction: transactionId,
     status: { $in: ['pending', 'processing', 'successful'] },
@@ -63,11 +56,7 @@ async function requestRefund({
   try {
     session.startTransaction();
 
-    // Debit first, inside the same DB transaction as the Refund record
-    // and the ledger entries. If the merchant's wallet doesn't have the
-    // funds (e.g. already paid out), this throws and nothing is created -
-    // you can't refund money that's no longer sitting in the wallet.
-    await debitWallet(merchantId, refundAmount, session, transaction.currency);
+    await debitWallet(merchantId, refundAmount, session, transaction.currency, mode);
 
     const [created] = await Refund.create(
       [
@@ -77,6 +66,7 @@ async function requestRefund({
           reference,
           amount: refundAmount,
           currency: transaction.currency,
+          mode,
           reason: reason || null,
           destinationBankCode,
           destinationAccountNumber,
@@ -113,12 +103,9 @@ async function requestRefund({
     action: 'refund.requested',
     entityType: 'Refund',
     entityRef: refund._id.toString(),
-    metadata: { transactionId, amount: refundAmount },
+    metadata: { transactionId, amount: refundAmount, mode },
   });
 
-  // Disbursement call happens AFTER the DB transaction commits - same
-  // reasoning as payout.service.js: never hold DB locks across an
-  // external call.
   try {
     const result = await sendRefundToBank(refund);
     refund.status = result.success ? 'successful' : 'failed';
@@ -130,8 +117,6 @@ async function requestRefund({
       await reverseRefund(refund);
     }
   } catch (err) {
-    // Provider call itself failed - status stays 'processing', same as
-    // payouts. A reconciliation job should check the real outcome.
     refund.failureReason = `provider_call_error: ${err.message}`;
     await refund.save();
   }
@@ -143,7 +128,7 @@ async function reverseRefund(refund) {
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
-    await creditWallet(refund.merchant, refund.amount, session, refund.currency);
+    await creditWallet(refund.merchant, refund.amount, session, refund.currency, refund.mode || 'live');
     await postDoubleEntry({
       entryGroup: `refund_reversal_${refund._id}`,
       amount: refund.amount,
