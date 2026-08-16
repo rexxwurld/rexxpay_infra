@@ -284,6 +284,10 @@ async function deactivateVirtualAccount({ merchantId, accountNumber }) {
   await account.save();
 
   await Customer.updateOne({ virtualAccount: account._id }, { virtualAccount: null });
+  
+  if (isLive(account)) {
+    await deactivateBankPoolAccount(account.accountNumber);
+  }
 
   return account;
 }
