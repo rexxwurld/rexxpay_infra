@@ -184,6 +184,49 @@
     height: 13px;
     flex: none;
   }
+
+  .test-banner {
+    display: none;
+    background: #fef9c3;
+    border: 1px solid #eab308;
+    color: #854d0e;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: center;
+    border-radius: 10px;
+    padding: 8px 10px;
+    margin-bottom: 16px;
+  }
+
+  .simulate-btn {
+    display: none;
+    width: 100%;
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: var(--ink);
+    color: var(--white);
+    border: none;
+    border-radius: 10px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .simulate-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .simulate-hint {
+    display: none;
+    margin-top: 8px;
+    font-size: 11.5px;
+    color: var(--ink-dim);
+  }
 </style>
 </head>
 
@@ -197,6 +240,10 @@
   </div>
 
   <div class="pay-card" id="payCard">
+
+    <div class="test-banner" id="testBanner">
+      Test mode — no real money moves
+    </div>
 
     <div class="section-label">
       Pay via bank transfer
@@ -227,6 +274,15 @@
       <span id="statusText">
         Waiting for your transfer…
       </span>
+    </div>
+
+    <button class="simulate-btn" id="simulateBtn" type="button">
+      Simulate bank transfer
+    </button>
+
+    <div class="simulate-hint" id="simulateHint">
+      This is a sandbox checkout, so no real transfer will happen.
+      Use the button above to fake one for testing.
     </div>
 
   </div>
