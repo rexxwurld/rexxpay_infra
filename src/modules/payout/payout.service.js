@@ -8,6 +8,7 @@ const { findActiveByCodeForMerchant } = require('../recipient/recipient.service'
 const { sendPayoutInstruction, simulatePayoutInstruction } = require('../bankPartner/rexxPayBankClient');
 const auditLog = require('../audit/auditLog.service');
 const limits = require('../../config/limits');
+const Merchant = require('../merchant/merchant.model');
 
 const MAX_BULK_PAYOUT_ITEMS = 100;
 
@@ -36,7 +37,11 @@ async function requestPayout({
   if (!Number.isInteger(amount) || amount <= 0) {
     throw new Error('invalid_payout_amount');
   }
-  if (amount > limits.MAX_SINGLE_PAYOUT_MINOR) {
+
+  const merchant = await Merchant.findById(merchantId);
+  const merchantLimits = limits.getLimitsForMerchant(merchant);
+
+  if (amount > merchantLimits.MAX_SINGLE_PAYOUT_MINOR) {
     throw new Error('payout_exceeds_max_single_payout_limit');
   }
 
