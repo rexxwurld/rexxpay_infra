@@ -37,7 +37,7 @@ async function dispatchMerchantWebhook(merchant, event, attempt = 1) {
         actorRef: 'merchant_webhook_dispatcher',
         action: 'merchant_webhook.delivery_failed_permanently',
         severity: 'critical',
-        metadata: { merchantId: merchant._id.toString(), url: merchant.webhookUrl, eventType: event.type, error: err.message },
+        metadata: { merchantId: merchant._id.toString(), eventType: event.type, error: err.message },
       });
       return;
     }
