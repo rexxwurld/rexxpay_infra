@@ -19,7 +19,7 @@ async function requireApiKey(req, res, next) {
     if (!merchant) {
       return res.status(401).json({ status: false, message: 'invalid_api_key' });
     }
-    req.merchant = { id: merchant._id, businessName: merchant.businessName, mode };
+    req.merchant = { id: merchant._id, businessName: merchant.businessName, mode, plan: merchant.plan };
     return next();
   }
 
@@ -29,7 +29,7 @@ async function requireApiKey(req, res, next) {
       const decoded = jwt.verify(sessionToken, jwtSecret);
       const merchant = await Merchant.findById(decoded.id);
       if (!merchant) throw new Error('merchant_not_found');
-      req.merchant = { id: merchant._id, businessName: merchant.businessName, mode: null };
+      req.merchant = { id: merchant._id, businessName: merchant.businessName, mode: null, plan: merchant.plan };
       return next();
     } catch {
       return res.status(401).json({ status: false, message: 'invalid_session' });
