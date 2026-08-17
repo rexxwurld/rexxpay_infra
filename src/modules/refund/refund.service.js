@@ -34,19 +34,16 @@ async function requestRefund({
 
   const mode = transaction.mode || 'live';
 
-  const priorRefunds = await Refund.find({
-    transaction: transactionId,
-    status: { $in: ['pending', 'processing', 'successful'] },
-  });
-  const alreadyRefunded = priorRefunds.reduce((sum, r) => sum + r.amount, 0);
-  const refundable = transaction.amountReceived - alreadyRefunded;
-
-  const refundAmount = amount == null ? refundable : amount;
+  // amount == null means "refund whatever is still refundable". We don't
+  // know that number for certain until we're inside the atomic guard
+  // below (another request could be settling concurrently), so this is
+  // just the best-effort amount used for the initial validation error
+  // message - the real, race-proof check happens in the
+  // findOneAndUpdate further down.
+  const bestEffortRefundable = transaction.amountReceived - transaction.refundedAmount;
+  const refundAmount = amount == null ? bestEffortRefundable : amount;
   if (!Number.isInteger(refundAmount) || refundAmount <= 0) {
     throw new Error('invalid_refund_amount');
-  }
-  if (refundAmount > refundable) {
-    throw new Error('refund_exceeds_refundable_amount');
   }
 
   const reference = `rf_${crypto.randomBytes(12).toString('hex')}`;
@@ -55,6 +52,35 @@ async function requestRefund({
   let refund;
   try {
     session.startTransaction();
+
+    // THE fix: atomically claim `refundAmount` of refundable headroom on
+    // the transaction itself, in the same step as checking it's
+    // available. This is a compare-and-increment on a single document -
+    // like wallet.service.js's reserveFunds - so two concurrent refund
+    // requests can never both succeed in claiming more than
+    // amountReceived combined, regardless of what either request read
+    // before starting its session. Previously, "amount already
+    // refunded" was computed by summing prior Refund documents *before*
+    // opening the session, which left a window where two concurrent
+    // requests could both read the same total, both pass validation,
+    // and together over-refund the transaction.
+    const claimed = await Transaction.findOneAndUpdate(
+      {
+        _id: transactionId,
+        $expr: {
+          $gte: [
+            { $subtract: ['$amountReceived', '$refundedAmount'] },
+            refundAmount,
+          ],
+        },
+      },
+      { $inc: { refundedAmount: refundAmount } },
+      { new: true, session }
+    );
+
+    if (!claimed) {
+      throw new Error('refund_exceeds_refundable_amount');
+    }
 
     await debitWallet(merchantId, refundAmount, session, transaction.currency, mode);
 
@@ -128,6 +154,16 @@ async function reverseRefund(refund) {
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
+
+    // Give back the refundable headroom we atomically claimed in
+    // requestRefund, so a reversed/failed refund doesn't permanently
+    // eat into how much of this transaction can still be refunded.
+    await Transaction.updateOne(
+      { _id: refund.transaction },
+      { $inc: { refundedAmount: -refund.amount } },
+      { session }
+    );
+
     await creditWallet(refund.merchant, refund.amount, session, refund.currency, refund.mode || 'live');
     await postDoubleEntry({
       entryGroup: `refund_reversal_${refund._id}`,
