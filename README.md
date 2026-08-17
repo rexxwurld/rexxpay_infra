@@ -44,6 +44,8 @@ The "Bank Partner" above is one of two things depending on environment:
 | `bankPartner` | Bank partner records; provisions pooled account numbers (mock locally, or real via RexxPay Bank) |
 | `virtualAccount` | Assigns pooled accounts to customers (never mints new ones) |
 | `payment` | Hosted checkout: creates the customer, assigns a virtual account, and returns a payment link (`pay.html`) a merchant can redirect to; `verify` polls the resulting transaction status |
+| `checkout` | Public, no-API-key endpoints the customer's browser calls directly — `GET /checkout/:token/status`, `POST /checkout/:token/simulate` (test-mode only), `GET /checkout/:token/complete` |
+| `mockBank` | Local, dev-only stand-in for a real bank partner — generates fake pool accounts and fires a self-signed webhook so the full loop is testable with no external dependency |
 | `wallet` | Merchant settlement balance, atomic credit/debit |
 | `transaction` | Ledger of every payment event, idempotent recording |
 | `payout` | Outbound transfers to merchants' real bank accounts |
