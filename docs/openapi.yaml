@@ -26,7 +26,15 @@ info:
     Test the integration in development using a test-mode checkout's
     /checkout/{token}/simulate endpoint, which stands in for a real bank
     transfer against a test-mode virtual account only.
-  version: "2.0.0"
+
+    The merchant dashboard (/dashboard.html) is a thin client over this same
+    API - every chart and stat it shows (including the Analytics tab's
+    revenue and transaction-range charts) is computed in the browser from
+    responses already documented here (GET /transactions, GET /payouts,
+    GET /refunds, GET /disputes, GET /subscriptions). No dashboard-only
+    endpoints exist; anything the dashboard can show, an API integration
+    can reproduce.
+  version: "2.1.0"
 servers:
   - url: /api/v1
     description: Current API version
