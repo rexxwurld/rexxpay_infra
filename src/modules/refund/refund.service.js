@@ -5,12 +5,22 @@ const Refund = require('./refund.model');
 const Transaction = require('../transaction/transaction.model');
 const { debitWallet, creditWallet } = require('../wallet/wallet.service');
 const { postDoubleEntry } = require('../ledger/ledger.service');
+const { sendRefundInstruction, simulateRefundInstruction } = require('../bankPartner/rexxPayBankClient');
 const auditLog = require('../audit/auditLog.service');
 
-async function sendRefundToBank(refund) {
-  return { success: true, providerRef: `sim_${refund.reference}` };
+function toMajorUnits(amountMinorUnits) {
+  return amountMinorUnits / 100;
 }
 
+// Merchant-facing entry point. In the real world, a refund is never
+// confirmed in the same round trip that requests it - card refunds in
+// particular settle over several business days via the network's batch
+// process, and even bank-transfer refunds go through a settlement
+// window. So this function's job is: validate, atomically reserve the
+// money on our side, ask the bank to queue the refund, and return - it
+// does NOT wait for the bank to confirm the money actually moved. The
+// real outcome always arrives later via the signed webhook handled in
+// refund.webhook.controller.js, which calls confirmRefundOutcome() below.
 async function requestRefund({
   merchantId,
   transactionId,
@@ -34,12 +44,8 @@ async function requestRefund({
 
   const mode = transaction.mode || 'live';
 
-  // amount == null means "refund whatever is still refundable". We don't
-  // know that number for certain until we're inside the atomic guard
-  // below (another request could be settling concurrently), so this is
-  // just the best-effort amount used for the initial validation error
-  // message - the real, race-proof check happens in the
-  // findOneAndUpdate further down.
+  // Best-effort figure just for the early validation error message - the
+  // real, race-proof check is the atomic findOneAndUpdate guard below.
   const bestEffortRefundable = transaction.amountReceived - transaction.refundedAmount;
   const refundAmount = amount == null ? bestEffortRefundable : amount;
   if (!Number.isInteger(refundAmount) || refundAmount <= 0) {
@@ -53,17 +59,13 @@ async function requestRefund({
   try {
     session.startTransaction();
 
-    // THE fix: atomically claim `refundAmount` of refundable headroom on
-    // the transaction itself, in the same step as checking it's
-    // available. This is a compare-and-increment on a single document -
-    // like wallet.service.js's reserveFunds - so two concurrent refund
-    // requests can never both succeed in claiming more than
-    // amountReceived combined, regardless of what either request read
-    // before starting its session. Previously, "amount already
-    // refunded" was computed by summing prior Refund documents *before*
-    // opening the session, which left a window where two concurrent
-    // requests could both read the same total, both pass validation,
-    // and together over-refund the transaction.
+    // Atomically claim `refundAmount` of refundable headroom on the
+    // transaction itself, in the same step as checking it's available -
+    // a compare-and-increment on a single document, same pattern as
+    // wallet.service.js's reserveFunds. This is what actually prevents
+    // two concurrent refund requests from together over-refunding the
+    // transaction, regardless of what either request read before
+    // starting its session.
     const claimed = await Transaction.findOneAndUpdate(
       {
         _id: transactionId,
@@ -97,7 +99,7 @@ async function requestRefund({
           destinationBankCode,
           destinationAccountNumber,
           destinationAccountName,
-          status: 'processing',
+          status: 'pending',
         },
       ],
       { session, ordered: true }
@@ -110,7 +112,7 @@ async function requestRefund({
       currency: transaction.currency,
       sourceType: 'refund',
       sourceRef: refund._id.toString(),
-      debit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Refund issued' },
+      debit: { accountType: 'merchant_wallet', accountRef: merchantId.toString(), description: 'Refund issued - funds held pending bank confirmation' },
       credit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Funds moved to clearing pending bank confirmation' },
       session,
     });
@@ -132,51 +134,180 @@ async function requestRefund({
     metadata: { transactionId, amount: refundAmount, mode },
   });
 
+  // Submit to the bank - this call only confirms the bank RECEIVED the
+  // instruction, not that the refund completed. Awaited (not
+  // fire-and-forget) because we do want to know right away if the bank
+  // rejected the submission outright (e.g. malformed destination
+  // account) - but this is just an acknowledgement round trip, not a
+  // wait for settlement, so it stays fast.
   try {
-    const result = await sendRefundToBank(refund);
-    refund.status = result.success ? 'successful' : 'failed';
-    refund.providerRef = result.providerRef || null;
-    if (!result.success) refund.failureReason = result.reason || 'provider_declined';
-    await refund.save();
+    const submitCall = mode === 'live' ? sendRefundInstruction : simulateRefundInstruction;
 
-    if (!result.success) {
-      await reverseRefund(refund);
+    const result = await submitCall({
+      idempotencyKey: refund.reference,
+      amountMajorUnits: toMajorUnits(refundAmount),
+      originalBankReference: transaction.bankReference,
+      destinationAccountNumber,
+      destinationBank: destinationBankCode,
+      destinationAccountName,
+    });
+
+    if (result.accepted) {
+      refund.status = 'submitted';
+      refund.submissionRef = result.submissionRef || null;
+      refund.submittedAt = new Date();
+      await refund.save();
+
+      await auditLog.record({
+        actorType: 'system',
+        actorRef: 'refund_service',
+        action: 'refund.submitted',
+        entityType: 'Refund',
+        entityRef: refund._id.toString(),
+        metadata: { submissionRef: refund.submissionRef, mode },
+      });
+    } else {
+      // Bank rejected the submission itself (not a later decline) - safe
+      // to reverse right away, since we know for certain nothing was
+      // queued on their side.
+      refund = (await reverseRefund(refund._id, result.rejectionReason || 'bank_rejected_submission')) || refund;
     }
   } catch (err) {
-    refund.failureReason = `provider_call_error: ${err.message}`;
-    await refund.save();
+    if (err.ambiguousOutcome) {
+      // We don't know if the bank received the instruction or not (the
+      // network call itself failed/timed out). Do NOT reverse - that
+      // could double-refund if the bank actually did receive it. Leave
+      // it in 'pending' with the ambiguity recorded, for manual
+      // reconciliation - same pattern as payout.service.js.
+      refund.failureReason = `submission_ambiguous: ${err.message}`;
+      await refund.save();
+
+      await auditLog.record({
+        actorType: 'system',
+        actorRef: 'refund_service',
+        action: 'refund.submission_ambiguous',
+        entityType: 'Refund',
+        entityRef: refund._id.toString(),
+        severity: 'critical',
+        metadata: { error: err.message },
+      });
+    } else {
+      refund = (await reverseRefund(refund._id, err.message)) || refund;
+    }
   }
 
   return refund;
 }
 
-async function reverseRefund(refund) {
+// Called ONLY from refund.webhook.controller.js, after the bank
+// partner's signature has been verified. This is the sole path by which
+// a refund is ever marked 'successful' - no other code path is trusted
+// to do that, mirroring how webhook.processor.js is the sole path for
+// marking an inbound payment 'success'.
+async function confirmRefundOutcome({ reference, success, providerRef, failureReason }) {
+  if (success) {
+    // Atomic, idempotent transition: only applies if the refund is still
+    // waiting on this confirmation. A duplicate or replayed webhook for
+    // an already-resolved refund matches nothing here and is a no-op,
+    // rather than re-crediting or double-processing anything.
+    const refund = await Refund.findOneAndUpdate(
+      { reference, status: { $in: ['pending', 'submitted'] } },
+      { $set: { status: 'successful', providerRef: providerRef || null, confirmedAt: new Date() } },
+      { new: true }
+    );
+
+    if (!refund) {
+      await auditLog.record({
+        actorType: 'system',
+        actorRef: 'refund_webhook',
+        action: 'refund.webhook_ignored_duplicate_or_unknown',
+        severity: 'info',
+        metadata: { reference, outcome: 'success' },
+      });
+      return null;
+    }
+
+    await auditLog.record({
+      actorType: 'system',
+      actorRef: 'refund_webhook',
+      action: 'refund.confirmed_successful',
+      entityType: 'Refund',
+      entityRef: refund._id.toString(),
+      metadata: { providerRef },
+    });
+
+    return refund;
+  }
+
+  // Bank confirmed the refund failed after having accepted the
+  // submission. Look it up by reference and hand off to reverseRefund,
+  // which owns its own atomic idempotency lock.
+  const refund = await Refund.findOne({ reference });
+  if (!refund) {
+    await auditLog.record({
+      actorType: 'system',
+      actorRef: 'refund_webhook',
+      action: 'refund.webhook_ignored_duplicate_or_unknown',
+      severity: 'info',
+      metadata: { reference, outcome: 'failure' },
+    });
+    return null;
+  }
+
+  return reverseRefund(refund._id, failureReason || 'bank_declined_after_submission', providerRef);
+}
+
+// Idempotent by construction: the pending/submitted -> reversing
+// transition is a single atomic findOneAndUpdate, so no matter how many
+// times this is called concurrently or after a retry (a flaky bank
+// rejection response, a retried webhook, a crash mid-reversal), only one
+// caller ever wins the lock and actually performs the wallet
+// credit/ledger/headroom-release. Every other caller gets `null` back
+// and does nothing further.
+async function reverseRefund(refundId, reason, providerRef = null) {
+  const lock = await Refund.findOneAndUpdate(
+    { _id: refundId, status: { $in: ['pending', 'submitted'] } },
+    { $set: { status: 'reversing' } },
+    { new: true }
+  );
+
+  if (!lock) {
+    // Already reversed, already successful, or already mid-reversal by
+    // another caller - nothing to do.
+    return null;
+  }
+
   const session = await mongoose.startSession();
   try {
     session.startTransaction();
 
-    // Give back the refundable headroom we atomically claimed in
-    // requestRefund, so a reversed/failed refund doesn't permanently
-    // eat into how much of this transaction can still be refunded.
+    // Give back the refundable headroom claimed in requestRefund, so a
+    // reversed refund doesn't permanently eat into how much of this
+    // transaction can still be refunded.
     await Transaction.updateOne(
-      { _id: refund.transaction },
-      { $inc: { refundedAmount: -refund.amount } },
+      { _id: lock.transaction },
+      { $inc: { refundedAmount: -lock.amount } },
       { session }
     );
 
-    await creditWallet(refund.merchant, refund.amount, session, refund.currency, refund.mode || 'live');
+    await creditWallet(lock.merchant, lock.amount, session, lock.currency, lock.mode || 'live');
     await postDoubleEntry({
-      entryGroup: `refund_reversal_${refund._id}`,
-      amount: refund.amount,
-      currency: refund.currency,
+      entryGroup: `refund_reversal_${lock._id}`,
+      amount: lock.amount,
+      currency: lock.currency,
       sourceType: 'reversal',
-      sourceRef: refund._id.toString(),
+      sourceRef: lock._id.toString(),
       debit: { accountType: 'payout_clearing', accountRef: 'platform_clearing', description: 'Refund reversal' },
-      credit: { accountType: 'merchant_wallet', accountRef: refund.merchant.toString(), description: 'Refund reversal - funds returned' },
+      credit: { accountType: 'merchant_wallet', accountRef: lock.merchant.toString(), description: 'Refund reversal - funds returned' },
       session,
     });
-    refund.status = 'reversed';
-    await refund.save({ session });
+
+    lock.status = 'reversed';
+    lock.failureReason = reason;
+    if (providerRef) lock.providerRef = providerRef;
+    lock.confirmedAt = new Date();
+    await lock.save({ session });
+
     await session.commitTransaction();
     session.endSession();
   } catch (err) {
@@ -184,6 +315,18 @@ async function reverseRefund(refund) {
     session.endSession();
     throw err;
   }
+
+  await auditLog.record({
+    actorType: 'system',
+    actorRef: 'refund_service',
+    action: 'refund.reversed',
+    entityType: 'Refund',
+    entityRef: lock._id.toString(),
+    severity: 'warning',
+    metadata: { reason, mode: lock.mode },
+  });
+
+  return lock;
 }
 
 async function listForMerchant(merchantId) {
@@ -196,4 +339,9 @@ async function getForMerchant(merchantId, refundId) {
   return refund;
 }
 
-module.exports = { requestRefund, listForMerchant, getForMerchant };
+module.exports = {
+  requestRefund,
+  confirmRefundOutcome,
+  listForMerchant,
+  getForMerchant,
+};
