@@ -1,11 +1,17 @@
 // src/utils/feeCalculator.js
 const { DEFAULT_FEE } = require('../config/fees');
+const { getPlanConfig } = require('../config/plans');
 
 /**
  * Computes the platform fee owed on an amount, in minor units.
- * Per-merchant overrides (merchant.fees) win over the global default -
- * this is what lets you negotiate a lower rate for a high-volume
- * merchant without touching code.
+ *
+ * Resolution order (highest precedence last):
+ *   1. Global DEFAULT_FEE (src/config/fees.js)
+ *   2. The merchant's plan tier (src/config/plans.js) - this is new;
+ *      previously merchant.plan was stored but never actually read here.
+ *   3. merchant.fees - a per-merchant override, for a negotiated rate
+ *      that doesn't fit neatly into a plan tier. Still wins over the
+ *      plan default, same as before.
  *
  * @param {number} amountMinor - the amount the fee is calculated against
  *   (post-split, i.e. what's actually landing as the merchant's share).
@@ -17,10 +23,26 @@ function computeFee(amountMinor, merchant = null) {
     throw new Error('invalid_fee_base_amount');
   }
 
+  const plan = getPlanConfig(merchant?.plan).fees;
   const override = merchant?.fees || {};
-  const percentageBps = Number.isFinite(override.percentageBps) ? override.percentageBps : DEFAULT_FEE.percentageBps;
-  const fixedMinor = Number.isFinite(override.fixedMinor) ? override.fixedMinor : DEFAULT_FEE.fixedMinor;
-  const capMinor = Number.isFinite(override.capMinor) ? override.capMinor : DEFAULT_FEE.capMinor;
+
+  const percentageBps = Number.isFinite(override.percentageBps)
+    ? override.percentageBps
+    : Number.isFinite(plan.percentageBps)
+      ? plan.percentageBps
+      : DEFAULT_FEE.percentageBps;
+
+  const fixedMinor = Number.isFinite(override.fixedMinor)
+    ? override.fixedMinor
+    : Number.isFinite(plan.fixedMinor)
+      ? plan.fixedMinor
+      : DEFAULT_FEE.fixedMinor;
+
+  const capMinor = Number.isFinite(override.capMinor)
+    ? override.capMinor
+    : Number.isFinite(plan.capMinor)
+      ? plan.capMinor
+      : DEFAULT_FEE.capMinor;
 
   let feeAmount = Math.floor((amountMinor * percentageBps) / 10000) + fixedMinor;
 
