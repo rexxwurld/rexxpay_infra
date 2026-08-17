@@ -31,6 +31,8 @@
     --mono: 'JetBrains Mono', ui-monospace, monospace;
     --sans: 'Inter', system-ui, sans-serif;
     --sidebar-w: 220px;
+    --violet: #7c3aed;
+    --violet-bg: #ede9fe;
   }
 
   * { box-sizing: border-box; }
@@ -231,6 +233,53 @@
   .stat .val.amber { color: var(--amber); }
   .stat .val.blue { color: var(--sky-dark); }
   .stat .sub-note { font-size: 11.5px; color: var(--ink-faint); margin-top: 6px; }
+
+  /* ---------- Charts ---------- */
+  .chart-grid {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 16px;
+    margin-bottom: 22px;
+  }
+  .chart-card {
+    background: var(--white);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 2px 10px -4px rgba(15,33,51,0.05);
+    overflow: hidden;
+  }
+  .chart-card .chart-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 18px 22px 4px;
+  }
+  .chart-card .chart-head h2 { font-size: 14px; margin: 0; font-weight: 700; color: var(--ink); }
+  .chart-card .chart-head .hint { font-size: 12px; color: var(--ink-faint); }
+  .chart-card .chart-body { padding: 6px 18px 18px; }
+  .chart-canvas-wrap { position: relative; height: 240px; }
+  .insight-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    padding: 0 22px 20px;
+  }
+  .insight-chip {
+    background: var(--sky-lighter);
+    border: 1px solid var(--sky-light);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .insight-chip .k { font-family: var(--mono); font-size: 10.5px; color: var(--ink-dim); text-transform: uppercase; letter-spacing: .05em; }
+  .insight-chip .v { font-family: var(--mono); font-weight: 700; font-size: 16px; margin-top: 4px; color: var(--ink); }
+  .legend-row { display: flex; gap: 14px; padding: 0 22px 14px; flex-wrap: wrap; }
+  .legend-row .li { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-dim); }
+  .legend-row .li .sw { width: 9px; height: 9px; border-radius: 3px; }
+  @media (max-width: 980px) {
+    .chart-grid { grid-template-columns: 1fr; }
+  }
 
   .tab-panel { display: none; }
   .tab-panel.active { display: block; }
@@ -444,6 +493,10 @@
   }
 </style>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.1/dist/chartjs-chart-financial.min.js"></script>
+
 </head>
 <body class="dashboard-page">
 
@@ -460,6 +513,7 @@
     <div class="sidebar-group">
       <div class="sidebar-label">General</div>
       <button class="side-link active" data-tab="overview"><span class="ic">&#9679;</span>Overview</button>
+      <button class="side-link" data-tab="analytics"><span class="ic">&#9736;</span>Analytics</button>
       <button class="side-link" data-tab="transactions"><span class="ic">&#8646;</span>Transactions</button>
       <button class="side-link" data-tab="customers"><span class="ic">&#9679;</span>Customers</button>
     </div>
@@ -513,6 +567,18 @@
     <!-- ============ OVERVIEW ============ -->
     <div class="tab-panel active" id="tab-overview">
 
+      <div class="chart-card" style="margin-bottom: 22px;">
+        <div class="chart-head">
+          <h2>Revenue — last 14 days</h2>
+          <span class="hint">Settled volume received per day</span>
+        </div>
+        <div class="chart-body">
+          <div class="chart-canvas-wrap" style="height: 210px;">
+            <canvas id="ovRevenueChart"></canvas>
+          </div>
+        </div>
+      </div>
+
       <div class="panel">
         <div class="panel-head">
           <h2>Create a payment link</h2>
@@ -550,6 +616,61 @@
           </table>
           <div class="empty" id="recentTxEmpty" style="display:none;">No transactions yet — generate a payment link above to get started.</div>
         </div>
+      </div>
+
+    </div>
+
+    <!-- ============ ANALYTICS ============ -->
+    <div class="tab-panel" id="tab-analytics">
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-head">
+            <h2>Daily volume — bar</h2>
+            <span class="hint">Received vs. paid out, last 30 days</span>
+          </div>
+          <div class="legend-row">
+            <span class="li"><span class="sw" style="background:var(--sky);"></span>Received</span>
+            <span class="li"><span class="sw" style="background:var(--violet);"></span>Paid out</span>
+          </div>
+          <div class="chart-body">
+            <div class="chart-canvas-wrap">
+              <canvas id="anBarChart"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-head">
+            <h2>Transaction range — candlestick</h2>
+            <span class="hint">Open / high / low / close per day (₦)</span>
+          </div>
+          <div class="chart-body">
+            <div class="chart-canvas-wrap">
+              <canvas id="anCandleChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-head">
+          <h2>Business insights</h2>
+          <span class="hint">Computed from your live transaction history</span>
+        </div>
+        <div class="insight-row" id="anInsights">
+          <div class="insight-chip"><div class="k">Avg. transaction value</div><div class="v" id="anAvgVal">—</div></div>
+          <div class="insight-chip"><div class="k">Success rate</div><div class="v" id="anSuccessRate">—</div></div>
+          <div class="insight-chip"><div class="k">Busiest day (30d)</div><div class="v" id="anBusiestDay">—</div></div>
+          <div class="insight-chip"><div class="k">Refund rate</div><div class="v" id="anRefundRate">—</div></div>
+          <div class="insight-chip"><div class="k">Open disputes</div><div class="v" id="anOpenDisputes">—</div></div>
+          <div class="insight-chip"><div class="k">Active subscriptions</div><div class="v" id="anActiveSubs">—</div></div>
+        </div>
+      </div>
+
+      <div class="stub-note" id="anEmptyNote" style="display:none; margin-top: 4px;">
+        <span class="ic">&#9432;</span>
+        <span>Not enough transaction history yet to chart trends — figures fill in automatically as payments come through.</span>
       </div>
 
     </div>
