@@ -1,3 +1,4 @@
+// src/modules/refund/refund.model.js
 const mongoose = require('mongoose');
 
 const refundSchema = new mongoose.Schema(
@@ -18,13 +19,48 @@ const refundSchema = new mongoose.Schema(
     destinationAccountNumber: { type: String, required: true },
     destinationAccountName: { type: String, required: true },
 
+    // 'pending'    - not yet submitted to the bank (shouldn't normally be
+    //                observed externally; exists briefly mid-request).
+    // 'submitted'  - bank has acknowledged receipt of the refund
+    //                instruction. This is what a merchant sees right
+    //                after calling POST /refunds - it does NOT mean the
+    //                money has moved yet.
+    // 'reversing'  - a real, persisted lock state: something (a failed
+    //                submission, an outright bank rejection, or the
+    //                async decline webhook) has decided this refund must
+    //                be reversed, and reverseRefund() is/was mid-flight.
+    //                Only one caller can ever win the
+    //                pending/submitted -> reversing transition (it's an
+    //                atomic findOneAndUpdate), so this is what actually
+    //                makes reversal idempotent under concurrent or
+    //                retried webhook deliveries - not just a status
+    //                check, an atomic compare-and-swap on this field.
+    // 'successful' - bank's async webhook confirmed the refund landed.
+    // 'failed'     - reserved for a future distinct "we tried to reverse
+    //                and that itself failed" state; not set by the
+    //                current code path, kept for forward compatibility
+    //                with monitoring/alerting.
+    // 'reversed'   - claimed refund headroom + debited wallet amount
+    //                were given back because submission or confirmation
+    //                failed.
     status: {
       type: String,
-      enum: ['pending', 'processing', 'successful', 'failed', 'reversed'],
+      enum: ['pending', 'submitted', 'reversing', 'successful', 'failed', 'reversed'],
       default: 'pending',
     },
     failureReason: { type: String },
+
+    // Bank's acknowledgement reference for the *submission* (from
+    // sendRefundInstruction/simulateRefundInstruction). Not proof of
+    // settlement - just proof the instruction was received.
+    submissionRef: { type: String, default: null },
+    submittedAt: { type: Date, default: null },
+
+    // Bank's reference for the *final, confirmed* outcome, delivered via
+    // the async refund webhook. This is what actually proves the refund
+    // completed (or was declined).
     providerRef: { type: String, default: null },
+    confirmedAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
