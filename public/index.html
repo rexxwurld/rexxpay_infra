@@ -443,7 +443,7 @@ ul { list-style: none; }
 
     <div class="divbottomothers">
       <span>Developers</span>
-      <a href="#">Documentation</a>
+      <a href="folder/viewdocs.html">Documentation</a>
       <a href="#">API Reference</a>
       <a href="#">SDKs</a>
       <a href="#">Status</a>
@@ -470,5 +470,37 @@ ul { list-style: none; }
     <span>©️ 2026 SwiftPay. All rights reserved.</span>
   </div>
   <script src="script.js"></script>
+
+<a href="demo.html" class="swiftpay-demo-fab" aria-label="Try live demo checkout">
+  <span class="fab-ic">&#9889;</span>
+  <span class="fab-txt">Try Live Demo</span>
+</a>
+<style>
+.swiftpay-demo-fab {
+  position: fixed;
+  right: 22px;
+  bottom: 26px;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  color: #fff;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 13px 20px 13px 16px;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(59,130,246,.35);
+  text-decoration: none;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.swiftpay-demo-fab:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(59,130,246,.45); color: #fff; }
+.swiftpay-demo-fab .fab-ic { font-size: 16px; }
+@media (max-width: 640px) {
+  .swiftpay-demo-fab .fab-txt { display: none; }
+  .swiftpay-demo-fab { padding: 14px; border-radius: 50%; }
+}
+</style>
 </body>
 </html>
