@@ -7,9 +7,11 @@ const merchantSchema = new mongoose.Schema(
     email: { type: String, required: true, unique: true },
     passwordHash: { type: String, required: true },
 
-    // Self-reported at signup; does not itself gate features or fees -
-    // that's still controlled by the `fees` override below and any
-    // future plan-enforcement logic.
+    // Set at signup, changeable by ops. Drives default fees and limits
+    // (src/config/plans.js) and gates plan-only features (e.g.
+    // subaccounts) via the requirePlan middleware. A per-merchant `fees`
+    // override below still wins over the plan default for negotiated
+    // one-off rates.
     plan: { type: String, enum: ['starter', 'growth', 'enterprise'], default: 'starter' },
     webhookUrl: { type: String },
     webhookSecret: { type: String },
