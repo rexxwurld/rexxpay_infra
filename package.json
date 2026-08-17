@@ -14,6 +14,7 @@
     "release-stale-accounts": "node scripts/release-stale-accounts.js",
     "reactivate-expired-accounts": "node scripts/reactivate-expired-accounts.js",
     "reconcile": "node scripts/reconcile.js",
+    "fetch-and-reconcile": "node scripts/fetch-and-reconcile.js",
     "run-settlement": "node scripts/run-settlement.js",
     "generate-invoices": "node scripts/generate-invoices.js",
     "test": "jest --runInBand",
