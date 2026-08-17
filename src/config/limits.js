@@ -5,7 +5,9 @@
 // simple flat version - enough to demonstrate the control exists, not a
 // finished compliance policy. Wire real tiering in before production.
 
-module.exports = {
+const { getPlanConfig } = require('./plans');
+
+const GLOBAL_DEFAULTS = {
   // Single incoming payment above this (in minor units, i.e. kobo) gets
   // flagged for manual review instead of auto-credited.
   MAX_SINGLE_PAYMENT_MINOR: Number(process.env.MAX_SINGLE_PAYMENT_MINOR || 500_000_00), // ₦500,000
@@ -20,6 +22,10 @@ module.exports = {
 
   // Payouts
   MAX_SINGLE_PAYOUT_MINOR: Number(process.env.MAX_SINGLE_PAYOUT_MINOR || 2_000_000_00), // ₦2,000,000
+};
+
+module.exports = {
+  ...GLOBAL_DEFAULTS,
 
   // A virtual account that's been sitting 'assigned' with no successful
   // payment for longer than this is considered abandoned (customer never
@@ -56,4 +62,23 @@ module.exports = {
   // a single cron tick bounded instead of trying to settle an unbounded
   // backlog in one pass if the job was down for a while.
   SETTLEMENT_BATCH_SIZE: Number(process.env.SETTLEMENT_BATCH_SIZE || 500),
+
+  // ================= PLAN-AWARE LIMITS =================
+  // Resolves the four merchant-specific limits above by layering:
+  //   env-configured GLOBAL_DEFAULTS -> the merchant's plan tier
+  // (src/config/plans.js) -> (future) a per-merchant override field,
+  // once one exists, mirroring how merchant.fees already works.
+  //
+  // Pass a Merchant document (or null/undefined to just get the global
+  // defaults - e.g. for a pre-merchant context).
+  getLimitsForMerchant(merchant) {
+    const planLimits = getPlanConfig(merchant?.plan).limits || {};
+    return {
+      MAX_SINGLE_PAYMENT_MINOR: planLimits.MAX_SINGLE_PAYMENT_MINOR ?? GLOBAL_DEFAULTS.MAX_SINGLE_PAYMENT_MINOR,
+      MAX_DAILY_INBOUND_MINOR: planLimits.MAX_DAILY_INBOUND_MINOR ?? GLOBAL_DEFAULTS.MAX_DAILY_INBOUND_MINOR,
+      VELOCITY_WINDOW_MINUTES: GLOBAL_DEFAULTS.VELOCITY_WINDOW_MINUTES, // not plan-tiered; structuring window stays constant
+      VELOCITY_MAX_COUNT: planLimits.VELOCITY_MAX_COUNT ?? GLOBAL_DEFAULTS.VELOCITY_MAX_COUNT,
+      MAX_SINGLE_PAYOUT_MINOR: planLimits.MAX_SINGLE_PAYOUT_MINOR ?? GLOBAL_DEFAULTS.MAX_SINGLE_PAYOUT_MINOR,
+    };
+  },
 };
