@@ -41,6 +41,18 @@ const transactionSchema = new mongoose.Schema(
 
     platformFee: { type: Number, default: 0 },
     netAmount: { type: Number, default: 0 },
+
+    // Running total of everything reserved/paid out against this
+    // transaction via refund.service.js. This is the single source of
+    // truth for "how much of this payment is still refundable" - it is
+    // only ever changed through the atomic findOneAndUpdate guard in
+    // requestRefund/reverseRefund (see refund.service.js), never read
+    // then written separately. That guard is what actually prevents two
+    // concurrent refund requests from together refunding more than
+    // amountReceived; previously this was computed by summing prior
+    // Refund documents outside the transaction session, which left a
+    // race window between two concurrent requests.
+    refundedAmount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
