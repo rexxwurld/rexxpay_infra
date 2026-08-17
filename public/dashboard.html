@@ -384,9 +384,78 @@
     .info-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 560px) {
-    .stat-row { grid-template-columns: 1fr; }
     .main { padding: 18px 14px 48px; }
     .insight-row { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* ---------- Topbar search ---------- */
+  .topbar-search { flex: 1; max-width: 480px; margin: 0 16px; position: relative; display: none; }
+  .topbar-search .ic { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--ink-faint); width: 15px; height: 15px; }
+  .topbar-search input {
+    width: 100%; background: var(--bg); border: 1px solid var(--line); color: var(--ink);
+    padding: 9px 14px 9px 36px; border-radius: 10px; font-size: 13px; font-family: var(--sans);
+  }
+  .topbar-search input:focus { outline: none; border-color: var(--brand); background: var(--surface); }
+  @media (min-width: 760px) { .topbar-search { display: block; } }
+
+  /* ---------- Sidebar profile ---------- */
+  .sidebar-profile { display: flex; align-items: center; gap: 10px; padding: 6px 12px 16px; margin-bottom: 6px; border-bottom: 1px solid var(--line-soft); }
+  .sidebar-profile .who { min-width: 0; }
+  .sidebar-profile .nm { font-size: 13.5px; font-weight: 700; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar-profile .mid { font-size: 11px; color: var(--ink-faint); font-family: var(--mono); }
+
+  /* ---------- Balances (Home + Balances tab) ---------- */
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 4px 0 14px; }
+  .section-head h2 { font-size: 16px; margin: 0; font-weight: 800; color: var(--ink); }
+  .balance-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 26px; }
+  .balance-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: 18px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 10px;
+  }
+  .balance-card.disabled { background: var(--line-soft); opacity: .72; }
+  .balance-card-top { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--ink); }
+  .balance-card-top .flag { font-size: 16px; line-height: 1; }
+  .balance-sub { font-size: 11.5px; color: var(--ink-faint); }
+  .balance-amt-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .balance-amt { font-family: var(--mono); font-size: 17px; font-weight: 700; color: var(--ink); letter-spacing: .01em; }
+  .eye-btn { background: none; border: none; padding: 4px; cursor: pointer; color: var(--ink-faint); display: flex; }
+  .eye-btn:hover { color: var(--brand-darker); }
+  .balance-unavailable { font-size: 11px; color: var(--ink-faint); margin-top: -2px; }
+  @media (max-width: 980px) { .balance-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .balance-grid { grid-template-columns: 1fr; } }
+
+  /* ---------- Quick actions ---------- */
+  .quick-actions-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
+    background: var(--line); border: 1px solid var(--line); border-radius: var(--r-lg);
+    overflow: hidden; margin-bottom: 26px;
+  }
+  .qa-btn {
+    background: var(--surface); border: none; padding: 18px 16px; display: flex; align-items: center; gap: 12px;
+    font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); text-align: left; cursor: pointer;
+  }
+  .qa-btn:hover { background: var(--brand-50); color: var(--brand-darker); }
+  .qa-ic {
+    width: 34px; height: 34px; border-radius: 9px; background: var(--brand-50); color: var(--brand-darker);
+    display: flex; align-items: center; justify-content: center; flex: none;
+  }
+  @media (max-width: 860px) { .quick-actions-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .quick-actions-grid { grid-template-columns: 1fr; } }
+
+  /* ---------- Overview split (chart + summary) ---------- */
+  .overview-split { display: grid; grid-template-columns: 1.6fr 1fr; gap: 0; }
+  .overview-split .ov-chart-side { padding: 6px 18px 18px; border-right: 1px solid var(--line-soft); }
+  .overview-split .ov-stats-side { padding: 20px 22px; display: flex; flex-direction: column; gap: 18px; }
+  .ov-stat .k-label { font-size: 11px; color: var(--ink-dim); font-family: var(--mono); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+  .ov-stat .k-val3 { font-size: 19px; font-weight: 800; color: var(--ink); font-family: var(--mono); }
+  .ov-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ov-controls select {
+    background: var(--bg); border: 1px solid var(--line); color: var(--ink); font-size: 12.5px; font-weight: 600;
+    padding: 7px 10px; border-radius: var(--r-sm); font-family: var(--sans);
+  }
+  @media (max-width: 860px) {
+    .overview-split { grid-template-columns: 1fr; }
+    .overview-split .ov-chart-side { border-right: none; border-bottom: 1px solid var(--line-soft); }
   }
 </style>
 
@@ -402,22 +471,21 @@
     <button class="menu-toggle" id="sidebarToggle" aria-label="Toggle menu" type="button">
       <svg class="icon" viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
     </button>
-    <a href="/" class="brand"><span class="dot"></span>SwiftPay</a>
-    <span class="crumb" id="crumbLabel">/ Overview</span>
-  </div>
-  <div class="topbar-right">
-    <span class="mode-pill"><span class="dot"></span>Live</span>
-    <div class="user-chip">
-      <div class="avatar" id="avatarInitial">—</div>
+    <div class="user-chip" style="border:none; padding-left:0;">
+      <div class="avatar" id="sideAvatarInitial">—</div>
       <div class="who">
-        <span class="nm" id="bizName">—</span>
-        <span class="em" id="bizEmail"></span>
+        <span class="nm" id="sideBizName">—</span>
+        <span class="em" id="sideMerchantId">—</span>
       </div>
     </div>
-    <button class="btn btn-ghost btn-sm" id="logoutBtn" title="Log out">
-      <svg class="icon" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      <span>Log out</span>
-    </button>
+  </div>
+  <div class="topbar-search">
+    <svg class="icon ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" placeholder="Search for features or sub-features" disabled title="Search coming soon" />
+  </div>
+  <div style="display:none;">
+    <span id="bizName"></span><span id="bizEmail"></span>
+    <button id="logoutBtn"></button>
   </div>
 </div>
 
@@ -427,127 +495,148 @@
 
   <aside class="sidebar" id="sidebarDrawer">
     <div class="sidebar-group">
-      <div class="sidebar-label">General</div>
       <button class="side-link active" data-tab="overview">
-        <svg class="icon ic" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
-        Overview
-      </button>
-      <button class="side-link" data-tab="analytics">
-        <svg class="icon ic" viewBox="0 0 24 24"><line x1="6" y1="20" x2="6" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="14"/></svg>
-        Analytics
+        <svg class="icon ic" viewBox="0 0 24 24"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+        Home
       </button>
       <button class="side-link" data-tab="transactions">
         <svg class="icon ic" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-        Transactions
+        Transactions<span class="badge-count" id="disputeBadge" style="display:none;" title="Open disputes"></span>
       </button>
       <button class="side-link" data-tab="customers">
         <svg class="icon ic" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         Customers
       </button>
-    </div>
-    <div class="sidebar-group">
-      <div class="sidebar-label">Money</div>
-      <button class="side-link" data-tab="refunds">
-        <svg class="icon ic" viewBox="0 0 24 24"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
-        Refunds
+      <button class="side-link" data-tab="balances">
+        <svg class="icon ic" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Balances
       </button>
-      <button class="side-link" data-tab="disputes">
-        <svg class="icon ic" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        Disputes<span class="badge-count" id="disputeBadge" style="display:none;"></span>
+      <button class="side-link" data-tab="store">
+        <svg class="icon ic" viewBox="0 0 24 24"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9h18v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
+        Store
       </button>
-      <button class="side-link" data-tab="subscriptions">
-        <svg class="icon ic" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-        Subscriptions
-      </button>
-      <button class="side-link" data-tab="settlements">
-        <svg class="icon ic" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-        Settlements
-      </button>
-      <button class="side-link" data-tab="payouts">
+      <button class="side-link" data-tab="payments">
         <svg class="icon ic" viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
-        Payouts
+        Payments
       </button>
-    </div>
-    <div class="sidebar-group">
-      <div class="sidebar-label">Configuration</div>
+      <button class="side-link" data-tab="subaccounts">
+        <svg class="icon ic" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Subaccounts
+      </button>
       <button class="side-link" data-tab="settings">
         <svg class="icon ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         Settings
       </button>
     </div>
-    <div class="sidebar-foot">
-      <div class="mode-tag live" style="display:inline-flex; align-items:center; gap:6px;">
-        <svg class="icon" viewBox="0 0 24 24" style="width:12px;height:12px;"><circle cx="12" cy="12" r="9"/></svg>
-        Live mode
-      </div>
-    </div>
+    <div class="sidebar-foot"></div>
   </aside>
 
   <div class="main">
 
     <div class="page-head">
       <div>
-        <h1 id="pageTitle">Overview</h1>
-        <div class="biz-email">Balance reconciled from ledger</div>
+        <h1 id="pageTitle">Hello <span id="pageGreetName">—</span> 👋</h1>
       </div>
-      <div class="head-actions">
-        <button class="btn btn-ghost btn-sm" data-goto="payouts">
-          <svg class="icon" viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
-          Send payout
-        </button>
-        <button class="btn btn-accent btn-sm" id="quickNewLinkBtn">
-          <svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          New payment link
-        </button>
+      <div class="head-actions" style="display:none;">
+        <button class="btn btn-ghost btn-sm" data-goto="payments">Send payout</button>
+        <button class="btn btn-accent btn-sm" id="quickNewLinkBtn">New payment link</button>
       </div>
     </div>
 
-    <div class="stat-row">
-      <div class="stat tone-green">
-        <div class="stat-top">
-          <span class="lbl">Wallet balance</span>
-          <span class="ic-wrap"><svg class="icon" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></span>
-        </div>
-        <div class="val green" id="walletBalance">—</div>
-        <div class="sub-note">Available to pay out</div>
-      </div>
-      <div class="stat tone-sky">
-        <div class="stat-top">
-          <span class="lbl">Volume received</span>
-          <span class="ic-wrap"><svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></span>
-        </div>
-        <div class="val" id="volumeIn">—</div>
-        <div class="sub-note" id="txCountNote">— transactions</div>
-      </div>
-      <div class="stat tone-amber">
-        <div class="stat-top">
-          <span class="lbl">Pending review</span>
-          <span class="ic-wrap"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg></span>
-        </div>
-        <div class="val amber" id="flaggedCount">—</div>
-        <div class="sub-note">Flagged transactions</div>
-      </div>
-      <div class="stat tone-blue">
-        <div class="stat-top">
-          <span class="lbl">Paid out</span>
-          <span class="ic-wrap"><svg class="icon" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></span>
-        </div>
-        <div class="val blue" id="payoutVolume">—</div>
-        <div class="sub-note" id="payoutCountNote">— payouts</div>
-      </div>
-    </div>
-
-    <!-- ============ OVERVIEW ============ -->
+    <!-- ============ HOME ============ -->
     <div class="tab-panel active" id="tab-overview">
 
-      <div class="chart-card" style="margin-bottom: 20px;">
-        <div class="chart-head">
-          <h2>Revenue — last 14 days</h2>
-          <span class="hint">Settled volume received per day</span>
+      <div class="section-head">
+        <h2>Balances <svg class="icon" viewBox="0 0 24 24" style="width:15px;height:15px;display:inline-block;vertical-align:middle;color:var(--ink-faint);"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></h2>
+        <button class="btn btn-ghost btn-sm" data-goto="balances">View all balances</button>
+      </div>
+      <div class="balance-grid">
+        <div class="balance-card">
+          <div class="balance-card-top"><span class="flag">🇳🇬</span><span>NGN balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row">
+            <span class="balance-amt" id="balNGN">₦ ******</span>
+            <button class="eye-btn" id="balNGNEye" type="button" aria-label="Show balance">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+          <button class="btn btn-sm btn-block" data-goto="balances">View account details</button>
         </div>
-        <div class="chart-body">
-          <div class="chart-canvas-wrap" style="height: 210px;">
-            <canvas id="ovRevenueChart"></canvas>
+        <div class="balance-card disabled">
+          <div class="balance-card-top"><span class="flag">🇺🇸</span><span>USD balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt">$ ******</span></div>
+          <div class="balance-unavailable">Not available on SwiftPay yet</div>
+          <button class="btn btn-sm btn-block" disabled>Get account details</button>
+        </div>
+        <div class="balance-card disabled">
+          <div class="balance-card-top"><span class="flag">🇬🇧</span><span>GBP balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt">£ ******</span></div>
+          <div class="balance-unavailable">Not available on SwiftPay yet</div>
+          <button class="btn btn-sm btn-block" disabled>Get account details</button>
+        </div>
+        <div class="balance-card disabled">
+          <div class="balance-card-top"><span class="flag">🇪🇺</span><span>EUR balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt">€ ******</span></div>
+          <div class="balance-unavailable">Not available on SwiftPay yet</div>
+          <button class="btn btn-sm btn-block" disabled>Get account details</button>
+        </div>
+      </div>
+
+      <div class="section-head">
+        <h2>Quick actions</h2>
+      </div>
+      <div class="quick-actions-grid">
+        <button class="qa-btn" data-goto="payments">
+          <span class="qa-ic"><svg class="icon" viewBox="0 0 24 24"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></span>
+          Make local &amp; international payments
+        </button>
+        <button class="qa-btn" id="qaPosBtn">
+          <span class="qa-ic"><svg class="icon" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="18" x2="8.01" y2="18"/></svg></span>
+          Request POS terminal
+        </button>
+        <button class="qa-btn" id="qaLinkBtn">
+          <span class="qa-ic"><svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L12.5 19.5"/></svg></span>
+          Create payment links
+        </button>
+        <button class="qa-btn" data-goto="payments" id="qaInvoiceBtn">
+          <span class="qa-ic"><svg class="icon" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg></span>
+          Create invoices
+        </button>
+      </div>
+
+      <div class="section-head">
+        <h2>Overview</h2>
+        <div class="ov-controls">
+          <select disabled title="Only NGN is available on SwiftPay"><option>NGN</option></select>
+          <select disabled title="Date filtering is not wired up yet"><option>Last 7 Days</option></select>
+          <span class="btn btn-ghost btn-sm" id="ovRangeStart">—</span>
+          <span class="btn btn-ghost btn-sm" id="ovRangeEnd">—</span>
+        </div>
+      </div>
+      <div class="chart-card" style="margin-bottom: 20px;">
+        <div class="overview-split">
+          <div class="ov-chart-side">
+            <div class="chart-canvas-wrap" style="height: 210px;">
+              <canvas id="ovRevenueChart"></canvas>
+            </div>
+          </div>
+          <div class="ov-stats-side">
+            <div class="ov-stat">
+              <div class="k-label">Total Value</div>
+              <div class="k-val3" id="ovTotalValue">₦0.00</div>
+            </div>
+            <div class="ov-stat">
+              <div class="k-label">Total Volume</div>
+              <div class="k-val3" id="ovTotalVolume">0</div>
+            </div>
+            <div class="ov-stat">
+              <div class="k-label">Total Settlements</div>
+              <div class="k-val3" id="ovTotalSettlements">₦0.00</div>
+              <button class="btn btn-ghost btn-sm" style="padding-left:0;" data-goto="balances">See all settlements</button>
+            </div>
           </div>
         </div>
       </div>
@@ -580,7 +669,7 @@
       <div class="panel">
         <div class="panel-head">
           <h2>Recent transactions</h2>
-          <button class="btn btn-ghost btn-sm" data-goto="transactions">View all</button>
+          <button class="btn btn-ghost btn-sm" data-goto="transactions">See all transactions</button>
         </div>
         <div class="table-wrap">
           <table id="recentTxTable">
@@ -589,57 +678,6 @@
           </table>
         </div>
         <div class="empty" id="recentTxEmpty" style="display:none;">No transactions yet — generate a payment link above to get started.</div>
-      </div>
-
-    </div>
-
-    <!-- ============ ANALYTICS ============ -->
-    <div class="tab-panel" id="tab-analytics">
-
-      <div class="chart-grid">
-        <div class="chart-card">
-          <div class="chart-head">
-            <h2>Daily volume — bar</h2>
-            <span class="hint">Received vs. paid out, last 30 days</span>
-          </div>
-          <div class="legend-row">
-            <span class="li"><span class="sw" style="background:var(--brand);"></span>Received</span>
-            <span class="li"><span class="sw" style="background:var(--violet);"></span>Paid out</span>
-          </div>
-          <div class="chart-body">
-            <div class="chart-canvas-wrap"><canvas id="anBarChart"></canvas></div>
-          </div>
-        </div>
-
-        <div class="chart-card">
-          <div class="chart-head">
-            <h2>Transaction range — candlestick</h2>
-            <span class="hint">Open / high / low / close per day (₦)</span>
-          </div>
-          <div class="chart-body">
-            <div class="chart-canvas-wrap"><canvas id="anCandleChart"></canvas></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="chart-card">
-        <div class="chart-head">
-          <h2>Business insights</h2>
-          <span class="hint">Computed from your live transaction history</span>
-        </div>
-        <div class="insight-row" id="anInsights">
-          <div class="insight-chip"><div class="k">Avg. transaction value</div><div class="v" id="anAvgVal">—</div></div>
-          <div class="insight-chip"><div class="k">Success rate</div><div class="v" id="anSuccessRate">—</div></div>
-          <div class="insight-chip"><div class="k">Busiest day (30d)</div><div class="v" id="anBusiestDay">—</div></div>
-          <div class="insight-chip"><div class="k">Refund rate</div><div class="v" id="anRefundRate">—</div></div>
-          <div class="insight-chip"><div class="k">Open disputes</div><div class="v" id="anOpenDisputes">—</div></div>
-          <div class="insight-chip"><div class="k">Active subscriptions</div><div class="v" id="anActiveSubs">—</div></div>
-        </div>
-      </div>
-
-      <div class="stub-note" id="anEmptyNote" style="display:none; margin-top: 4px;">
-        <span class="ic">&#9432;</span>
-        <span>Not enough transaction history yet to chart trends — figures fill in automatically as payments come through.</span>
       </div>
 
     </div>
@@ -679,50 +717,9 @@
         </div>
         <div class="empty" id="txEmpty" style="display:none;">No matching transactions.</div>
       </div>
-    </div>
+    
 
-    <!-- ============ CUSTOMERS ============ -->
-    <div class="tab-panel" id="tab-customers">
-
-      <div class="panel">
-        <div class="panel-head">
-          <h2>Add a customer</h2>
-          <span class="hint">Customers are also created automatically the first time they pay</span>
-        </div>
-        <div class="panel-body">
-          <form id="customerForm" class="inline-form">
-            <div class="field">
-              <label>Full name</label>
-              <input type="text" id="custName" placeholder="Jane Doe" required />
-            </div>
-            <div class="field">
-              <label>Email</label>
-              <input type="email" id="custEmail" placeholder="customer@email.com" required />
-            </div>
-            <div class="field">
-              <label>Phone (optional)</label>
-              <input type="text" id="custPhone" placeholder="080..." />
-            </div>
-            <button type="submit" class="btn btn-accent">Add customer</button>
-          </form>
-        </div>
-      </div>
-
-      <div class="panel">
-        <div class="panel-head"><h2>All customers</h2></div>
-        <div class="table-wrap">
-          <table id="custTable">
-            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Added</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div class="empty" id="custEmpty" style="display:none;">No customers yet.</div>
-      </div>
-
-    </div>
-
-    <!-- ============ REFUNDS ============ -->
-    <div class="tab-panel" id="tab-refunds">
+      <div class="section-head"><h2>Refunds</h2></div>
 
       <div class="panel">
         <div class="panel-head">
@@ -773,10 +770,9 @@
         <div class="empty" id="refEmpty" style="display:none;">No refunds yet.</div>
       </div>
 
-    </div>
+    
 
-    <!-- ============ DISPUTES ============ -->
-    <div class="tab-panel" id="tab-disputes">
+      <div class="section-head"><h2>Disputes</h2></div>
 
       <div class="panel">
         <div class="panel-head">
@@ -818,10 +814,171 @@
         </div>
       </div>
 
+    
+
     </div>
 
-    <!-- ============ SUBSCRIPTIONS ============ -->
-    <div class="tab-panel" id="tab-subscriptions">
+    <!-- ============ CUSTOMERS ============ -->
+    <div class="tab-panel" id="tab-customers">
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Add a customer</h2>
+          <span class="hint">Customers are also created automatically the first time they pay</span>
+        </div>
+        <div class="panel-body">
+          <form id="customerForm" class="inline-form">
+            <div class="field">
+              <label>Full name</label>
+              <input type="text" id="custName" placeholder="Jane Doe" required />
+            </div>
+            <div class="field">
+              <label>Email</label>
+              <input type="email" id="custEmail" placeholder="customer@email.com" required />
+            </div>
+            <div class="field">
+              <label>Phone (optional)</label>
+              <input type="text" id="custPhone" placeholder="080..." />
+            </div>
+            <button type="submit" class="btn btn-accent">Add customer</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>All customers</h2></div>
+        <div class="table-wrap">
+          <table id="custTable">
+            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Added</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="custEmpty" style="display:none;">No customers yet.</div>
+      </div>
+
+    </div>
+
+    <!-- ============ BALANCES ============ -->
+    <div class="tab-panel" id="tab-balances">
+
+      <div class="section-head"><h2>Balances</h2></div>
+      <div class="balance-grid">
+        <div class="balance-card">
+          <div class="balance-card-top"><span class="flag">🇳🇬</span><span>NGN balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt" id="balDetailNGN">—</span></div>
+        </div>
+        <div class="balance-card disabled">
+          <div class="balance-card-top"><span class="flag">🇺🇸</span><span>USD balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt">$ ******</span></div>
+          <div class="balance-unavailable">Not available on SwiftPay yet</div>
+        </div>
+        <div class="balance-card disabled">
+          <div class="balance-card-top"><span class="flag">🇬🇧</span><span>GBP balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt">£ ******</span></div>
+          <div class="balance-unavailable">Not available on SwiftPay yet</div>
+        </div>
+        <div class="balance-card disabled">
+          <div class="balance-card-top"><span class="flag">🇪🇺</span><span>EUR balance</span></div>
+          <div class="balance-sub">Payout balance</div>
+          <div class="balance-amt-row"><span class="balance-amt">€ ******</span></div>
+          <div class="balance-unavailable">Not available on SwiftPay yet</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Summary</h2></div>
+        <div class="panel-body">
+          <div class="info-grid">
+            <div class="info-item"><div class="k-label">Volume received</div><div class="k-val2" id="ovTotalValue2">₦0.00</div></div>
+            <div class="info-item"><div class="k-label">Total paid out</div><div class="k-val2" id="ovTotalSettlements2">₦0.00</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Settlement schedule</h2>
+          <span class="hint">How a confirmed payment moves to your payout-ready balance</span>
+        </div>
+        <div class="panel-body">
+          <div class="stub-note">
+            <span class="ic">&#8505;</span>
+            <div>
+              Settlement batches move a transaction through
+              <code>pending_settlement → settled → available</code> on a schedule, but that
+              history is only exposed through an operator-only endpoint
+              (<code>/api/v1/admin/settlement/batches</code>, gated by
+              <code>INFRA_ADMIN_KEY</code>) — not a merchant-scoped one yet.
+              Your <strong>wallet balance</strong> shown above already reflects
+              settled funds; a per-transaction settlement timeline for merchants
+              is the next thing to add on the backend before this panel can show real data.
+            </div>
+          </div>
+        </div>
+      </div>
+    
+
+    </div>
+
+    <!-- ============ STORE ============ -->
+    <div class="tab-panel" id="tab-store">
+      <div class="panel">
+        <div class="panel-body" style="padding: 48px 22px; text-align: center;">
+          <div class="stub-note" style="display: inline-flex; text-align: left;">
+            <span class="ic">&#128717;</span>
+            <span>Store is coming soon — set up a storefront to sell products and services directly, without writing checkout code.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ PAYMENTS ============ -->
+    <div class="tab-panel" id="tab-payments">
+
+      <div class="section-head"><h2>Payouts</h2></div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Request a payout</h2></div>
+        <div class="panel-body">
+          <form id="payoutForm" class="inline-form">
+            <div class="field">
+              <label>Amount (₦)</label>
+              <input type="number" id="poAmount" placeholder="10000" min="1" step="0.01" required />
+            </div>
+            <div class="field">
+              <label>Bank code</label>
+              <input type="text" id="poBankCode" placeholder="058" required />
+            </div>
+            <div class="field">
+              <label>Account number</label>
+              <input type="text" id="poAccountNumber" placeholder="0123456789" required />
+            </div>
+            <div class="field">
+              <label>Account name</label>
+              <input type="text" id="poAccountName" placeholder="As registered with the bank" required />
+            </div>
+            <button type="submit" class="btn btn-accent">Send payout</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Payout history</h2></div>
+        <div class="table-wrap">
+          <table id="poTable">
+            <thead><tr><th>Reference</th><th>Status</th><th>Amount</th><th>Destination</th><th>Date</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="empty" id="poEmpty" style="display:none;">No payouts yet.</div>
+      </div>
+
+    
+
+      <div class="section-head"><h2>Billing &amp; subscriptions</h2></div>
 
       <div class="panel">
         <div class="panel-head">
@@ -908,70 +1065,54 @@
         <div class="empty" id="invEmpty" style="display:none;">No invoices yet.</div>
       </div>
 
+    
+
     </div>
 
-    <!-- ============ SETTLEMENTS ============ -->
-    <div class="tab-panel" id="tab-settlements">
+    <!-- ============ SUBACCOUNTS ============ -->
+    <div class="tab-panel" id="tab-subaccounts">
+
       <div class="panel">
         <div class="panel-head">
-          <h2>Settlement schedule</h2>
-          <span class="hint">How a confirmed payment moves to your payout-ready balance</span>
+          <h2>Add a subaccount</h2>
+          <span class="hint">Split settlement to a partner's own bank account — requires a plan that includes subaccounts</span>
         </div>
         <div class="panel-body">
-          <div class="stub-note">
-            <span class="ic">&#8505;</span>
-            <div>
-              Settlement batches move a transaction through
-              <code>pending_settlement → settled → available</code> on a schedule, but that
-              history is only exposed through an operator-only endpoint
-              (<code>/api/v1/admin/settlement/batches</code>, gated by
-              <code>INFRA_ADMIN_KEY</code>) — not a merchant-scoped one yet.
-              Your <strong>wallet balance</strong> on the Overview tab already reflects
-              settled funds; a per-transaction settlement timeline for merchants
-              is the next thing to add on the backend before this panel can show real data.
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ============ PAYOUTS ============ -->
-    <div class="tab-panel" id="tab-payouts">
-
-      <div class="panel">
-        <div class="panel-head"><h2>Request a payout</h2></div>
-        <div class="panel-body">
-          <form id="payoutForm" class="inline-form">
+          <form id="subaccountForm" class="inline-form">
             <div class="field">
-              <label>Amount (₦)</label>
-              <input type="number" id="poAmount" placeholder="10000" min="1" step="0.01" required />
+              <label>Business name</label>
+              <input type="text" id="subaccName" placeholder="Vendor name" required />
             </div>
             <div class="field">
               <label>Bank code</label>
-              <input type="text" id="poBankCode" placeholder="058" required />
+              <input type="text" id="subaccBankCode" placeholder="058" required />
             </div>
             <div class="field">
               <label>Account number</label>
-              <input type="text" id="poAccountNumber" placeholder="0123456789" required />
+              <input type="text" id="subaccAccountNumber" placeholder="0123456789" required />
             </div>
             <div class="field">
               <label>Account name</label>
-              <input type="text" id="poAccountName" placeholder="As registered with the bank" required />
+              <input type="text" id="subaccAccountName" placeholder="As registered with the bank" required />
             </div>
-            <button type="submit" class="btn btn-accent">Send payout</button>
+            <div class="field">
+              <label>Default split % (optional)</label>
+              <input type="number" id="subaccSplit" placeholder="20" min="0" max="100" step="0.01" />
+            </div>
+            <button type="submit" class="btn btn-accent">Add subaccount</button>
           </form>
         </div>
       </div>
 
       <div class="panel">
-        <div class="panel-head"><h2>Payout history</h2></div>
+        <div class="panel-head"><h2>All subaccounts</h2></div>
         <div class="table-wrap">
-          <table id="poTable">
-            <thead><tr><th>Reference</th><th>Status</th><th>Amount</th><th>Destination</th><th>Date</th></tr></thead>
+          <table id="subaccTable">
+            <thead><tr><th>Business name</th><th>Settlement account</th><th>Split</th><th>Added</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
-        <div class="empty" id="poEmpty" style="display:none;">No payouts yet.</div>
+        <div class="empty" id="subaccEmpty" style="display:none;">No subaccounts yet.</div>
       </div>
 
     </div>
@@ -1047,6 +1188,57 @@
         </div>
       </div>
 
+      <div class="section-head"><h2>Analytics</h2></div>
+
+      <div class="chart-grid">
+        <div class="chart-card">
+          <div class="chart-head">
+            <h2>Daily volume — bar</h2>
+            <span class="hint">Received vs. paid out, last 30 days</span>
+          </div>
+          <div class="legend-row">
+            <span class="li"><span class="sw" style="background:var(--brand);"></span>Received</span>
+            <span class="li"><span class="sw" style="background:var(--violet);"></span>Paid out</span>
+          </div>
+          <div class="chart-body">
+            <div class="chart-canvas-wrap"><canvas id="anBarChart"></canvas></div>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <div class="chart-head">
+            <h2>Transaction range — candlestick</h2>
+            <span class="hint">Open / high / low / close per day (₦)</span>
+          </div>
+          <div class="chart-body">
+            <div class="chart-canvas-wrap"><canvas id="anCandleChart"></canvas></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-head">
+          <h2>Business insights</h2>
+          <span class="hint">Computed from your live transaction history</span>
+        </div>
+        <div class="insight-row" id="anInsights">
+          <div class="insight-chip"><div class="k">Avg. transaction value</div><div class="v" id="anAvgVal">—</div></div>
+          <div class="insight-chip"><div class="k">Success rate</div><div class="v" id="anSuccessRate">—</div></div>
+          <div class="insight-chip"><div class="k">Busiest day (30d)</div><div class="v" id="anBusiestDay">—</div></div>
+          <div class="insight-chip"><div class="k">Refund rate</div><div class="v" id="anRefundRate">—</div></div>
+          <div class="insight-chip"><div class="k">Open disputes</div><div class="v" id="anOpenDisputes">—</div></div>
+          <div class="insight-chip"><div class="k">Active subscriptions</div><div class="v" id="anActiveSubs">—</div></div>
+        </div>
+      </div>
+
+      <div class="stub-note" id="anEmptyNote" style="display:none; margin-top: 4px;">
+        <span class="ic">&#9432;</span>
+        <span>Not enough transaction history yet to chart trends — figures fill in automatically as payments come through.</span>
+      </div>
+
+    
+
+
     </div>
 
   </div>
@@ -1061,16 +1253,22 @@
   // (mobile drawer, page title/crumb sync, avatar initial, CSV export)
   (function () {
     const TAB_LABELS = {
-      overview: 'Overview', analytics: 'Analytics', transactions: 'Transactions',
-      customers: 'Customers', refunds: 'Refunds', disputes: 'Disputes',
-      subscriptions: 'Subscriptions', settlements: 'Settlements', payouts: 'Payouts', settings: 'Settings',
+      overview: 'Home', transactions: 'Transactions', customers: 'Customers',
+      balances: 'Balances', store: 'Store', payments: 'Payments',
+      subaccounts: 'Subaccounts', settings: 'Settings',
     };
 
     function syncHeader(name) {
       const title = document.getElementById('pageTitle');
       const crumb = document.getElementById('crumbLabel');
-      const label = TAB_LABELS[name] || 'Overview';
-      if (title) title.textContent = label;
+      const label = TAB_LABELS[name] || 'Home';
+      if (title) {
+        // Home keeps its "Hello {name} 👋" greeting markup rather than
+        // being replaced by plain tab-label text.
+        title.innerHTML = name === 'overview'
+          ? 'Hello <span id="pageGreetName">' + (document.getElementById('pageGreetName')?.textContent || '—') + '</span> 👋'
+          : label;
+      }
       if (crumb) crumb.textContent = '/ ' + label;
     }
 

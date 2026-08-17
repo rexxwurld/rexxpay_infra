@@ -38,13 +38,22 @@ function esc(str) {
   }[c]));
 }
 
+// Sets textContent by id, silently no-oping if that id isn't on the
+// current page — safer than a bare getElementById().textContent chain
+// when a panel gets moved/renamed between tabs.
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
 /* ---------- Sidebar navigation ---------- */
 function showTab(name) {
   document.querySelectorAll('.side-link').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${name}`));
   // Chart.js can't size a canvas that was hidden (display:none) at creation time,
   // so re-render whenever a chart-bearing tab becomes visible.
-  if (name === 'overview' || name === 'analytics') {
+  // Analytics charts now live inside the Settings tab (see dashboard.html).
+  if (name === 'overview' || name === 'settings') {
     requestAnimationFrame(() => renderCharts());
   }
 }
@@ -66,13 +75,35 @@ async function loadProfile() {
   document.getElementById('setBizEmail').textContent = res.data.email;
   document.getElementById('setTestPubKey').textContent = res.data.testPublicKey || '—';
   document.getElementById('setLivePubKey').textContent = res.data.livePublicKey || '—';
+
+  const firstName = (res.data.businessName || '').trim().split(/\s+/)[0] || 'there';
+  setText('pageGreetName', firstName);
+  setText('sideBizName', res.data.businessName);
+  setText('sideMerchantId', res.data._id ? `Merchant ID: ${res.data._id}` : '');
+  const initial = (res.data.businessName || '?').trim().charAt(0).toUpperCase();
+  setText('sideAvatarInitial', initial || '?');
 }
 
 /* ---------- Wallet ---------- */
+let walletBalanceMinor = null;
+let balanceRevealed = false;
+
+function renderBalanceCard() {
+  const masked = '₦ ******';
+  setText('balNGN', balanceRevealed ? money(walletBalanceMinor) : masked);
+  setText('balDetailNGN', walletBalanceMinor === null ? '—' : money(walletBalanceMinor));
+}
+
 async function loadWallet() {
   const res = await api(`/api/wallet?mode=${VIEW_MODE}`);
-  document.getElementById('walletBalance').textContent = money(res.data.balance);
+  walletBalanceMinor = res.data.balance;
+  renderBalanceCard();
 }
+
+document.getElementById('balNGNEye')?.addEventListener('click', () => {
+  balanceRevealed = !balanceRevealed;
+  renderBalanceCard();
+});
 
 /* ---------- Transactions ---------- */
 function renderTxRow(t) {
@@ -144,11 +175,12 @@ async function loadTransactions() {
   const volumeIn = transactions
     .filter(t => settled.includes(t.status))
     .reduce((sum, t) => sum + (t.amountReceived || 0), 0);
-  document.getElementById('volumeIn').textContent = money(volumeIn);
-  document.getElementById('txCountNote').textContent = `${transactions.length} transaction${transactions.length === 1 ? '' : 's'}`;
+  setText('ovTotalValue', money(volumeIn));
+  setText('ovTotalValue2', money(volumeIn));
+  setText('ovTotalVolume', String(transactions.length));
 
   const flagged = transactions.filter(t => t.status === 'flagged').length;
-  document.getElementById('flaggedCount').textContent = flagged;
+  setText('flaggedCount', String(flagged));
 
   renderTransactions();
   populateRefundTxOptions();
@@ -181,8 +213,9 @@ async function loadPayouts() {
   const paidOut = payouts
     .filter(p => p.status === 'successful')
     .reduce((sum, p) => sum + (p.amount || 0), 0);
-  document.getElementById('payoutVolume').textContent = money(paidOut);
-  document.getElementById('payoutCountNote').textContent = `${payouts.length} payout${payouts.length === 1 ? '' : 's'}`;
+  setText('ovTotalSettlements', money(paidOut));
+  setText('ovTotalSettlements2', money(paidOut));
+  setText('payoutCountNote', `${payouts.length} payout${payouts.length === 1 ? '' : 's'}`);
 
   renderPayouts();
 }
@@ -479,6 +512,74 @@ async function loadInvoices() {
   renderInvoices();
 }
 
+/* ---------- Subaccounts ---------- */
+let subaccounts = [];
+
+function renderSubaccounts() {
+  const tbody = document.querySelector('#subaccTable tbody');
+  const empty = document.getElementById('subaccEmpty');
+  if (!subaccounts.length) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  tbody.innerHTML = subaccounts.map(s => `
+    <tr>
+      <td>${esc(s.businessName)}</td>
+      <td>${esc(s.settlementAccountNumber)} (${esc(s.settlementBankCode)})</td>
+      <td>${s.defaultSplitPercentage != null ? s.defaultSplitPercentage + '%' : '—'}</td>
+      <td>${fmtDate(s.createdAt)}</td>
+      <td><button class="btn btn-sm" data-settle-subacc="${s._id}">Settle</button></td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('[data-settle-subacc]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      try {
+        await api(`/api/subaccounts/${btn.dataset.settleSubacc}/settle`, { method: 'POST' });
+        toast('Subaccount settled');
+        await loadSubaccounts();
+      } catch (err) {
+        toast(err.message.replace(/_/g, ' '), true);
+      }
+    });
+  });
+}
+
+async function loadSubaccounts() {
+  const res = await api('/api/subaccounts');
+  subaccounts = res.data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  renderSubaccounts();
+}
+
+document.getElementById('subaccountForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const businessName = document.getElementById('subaccName').value.trim();
+  const settlementBankCode = document.getElementById('subaccBankCode').value.trim();
+  const settlementAccountNumber = document.getElementById('subaccAccountNumber').value.trim();
+  const settlementAccountName = document.getElementById('subaccAccountName').value.trim();
+  const splitRaw = document.getElementById('subaccSplit').value;
+  const defaultSplitPercentage = splitRaw ? parseFloat(splitRaw) : undefined;
+
+  try {
+    await api('/api/subaccounts', {
+      method: 'POST',
+      body: JSON.stringify({
+        businessName,
+        settlementBankCode,
+        settlementAccountNumber,
+        settlementAccountName,
+        defaultSplitPercentage,
+      }),
+    });
+    toast('Subaccount added');
+    e.target.reset();
+    await loadSubaccounts();
+  } catch (err) {
+    toast(err.message.replace(/_/g, ' '), true);
+  }
+});
+
 /* ---------- Overview / global refresh ---------- */
 async function refreshAll() {
   await Promise.all([
@@ -492,6 +593,7 @@ async function refreshAll() {
     loadPlans(),
     loadSubscriptions(),
     loadInvoices(),
+    loadSubaccounts(),
   ]);
   renderCharts();
 }
@@ -700,7 +802,6 @@ function renderInsights() {
   const openDisputes = disputes.filter(d => ['open', 'under_review'].includes(d.status)).length;
   const activeSubs = subscriptions.filter(s => s.status === 'active').length;
 
-  const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   setText('anAvgVal', money(avg));
   setText('anSuccessRate', transactions.length ? `${successRate}%` : '—');
   setText('anBusiestDay', busiestCount ? `${new Date(busiestDay).toLocaleDateString('en-NG', { day: '2-digit', month: 'short' })} (${busiestCount})` : '—');
@@ -825,6 +926,18 @@ function wireRegenButton(btnId, resultId, mode) {
 wireRegenButton('regenTestKeyBtn', 'regenTestKeyResult', 'test');
 wireRegenButton('regenLiveKeyBtn', 'regenLiveKeyResult', 'live');
 
+document.getElementById('qaPosBtn')?.addEventListener('click', () => {
+  toast('POS terminals — coming soon');
+});
+
+document.getElementById('qaLinkBtn')?.addEventListener('click', () => {
+  const amt = document.getElementById('linkAmount');
+  if (amt) {
+    amt.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => amt.focus(), 300);
+  }
+});
+
 document.querySelectorAll('#txFilters .chip').forEach(chip => {
   chip.addEventListener('click', () => {
     document.querySelectorAll('#txFilters .chip').forEach(c => c.classList.remove('active'));
@@ -842,3 +955,12 @@ document.getElementById('txSearch').addEventListener('input', (e) => {
 refreshAll().catch((err) => {
   if (err.message !== 'unauthenticated') toast(err.message, true);
 });
+
+(function setOverviewDateRange() {
+  const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - 7);
+  setText('ovRangeStart', fmt(start));
+  setText('ovRangeEnd', fmt(end));
+})();
