@@ -109,10 +109,46 @@ must go.
 |---|---|
 | `index.html` | Marketing/landing page |
 | `onboarding.html` | Merchant register/login (`?tab=login` or `?tab=register`) |
-| `dashboard.html` | Logged-in merchant dashboard — wallet balance, transactions, API keys |
+| `dashboard.html` | Logged-in merchant dashboard — see "Merchant dashboard" below |
 | `pay.html` | Customer-facing checkout page rendered by the `payment.initialize` link; polls `GET /api/v1/checkout/:token/status`, and for test-mode checkouts offers a "simulate transfer" button that calls `POST /api/v1/checkout/:token/simulate` |
 | `demo.html` | Public, no-signup demo of the checkout flow, served at `/demo`; talks only to `POST /api/v1/demo/checkout` |
 | `admin.html` | Operator dashboard (pool status + manual provisioning), served at `/admin`; authenticates client-side against the `INFRA_ADMIN_KEY`-protected `/api/v1/admin/*` routes |
+| `folder/*.html` | Marketing site pages — `products.html`, `pricing.html`, `developers.html`, `company.html`, `viewdocs.html`, and legal pages (`terms_of_service.html`, `privacy_policy.html`, `cookie_policy.html`) |
+
+### Merchant dashboard (`dashboard.html`)
+
+Single-page, tab-based dashboard styled after Paystack/Flutterwave's merchant
+consoles. All data loads client-side from the session-authenticated
+`/api/*` endpoints (`public/js/dashboard.js` + `public/js/api.js`):
+
+| Tab | What it shows |
+|---|---|
+| Overview | Wallet balance, volume received, flagged count, paid-out total, a 14-day revenue bar chart, quick payment-link generator, recent transactions |
+| Analytics | 30-day bar chart (received vs. paid out), a candlestick chart of daily transaction open/high/low/close, and computed business insights (average transaction value, success rate, busiest day, refund rate, open disputes, active subscriptions) |
+| Transactions | Full transaction ledger with status filters and search |
+| Customers | Merchant's end-customers |
+| Refunds | Request a refund against a settled transaction; refund history |
+| Disputes | Open disputes and evidence submission |
+| Subscriptions | Plans, subscribing customers, and generated invoices |
+| Settlements | Settlement schedule and status |
+| Payouts | Request a payout; payout history |
+| Settings | Business profile, API secret key regeneration, webhook URL |
+
+Charts are rendered with [Chart.js](https://www.chartjs.org/) plus the
+`chartjs-chart-financial` plugin (loaded from CDN in `dashboard.html`); all
+chart data is computed client-side from the same `transactions`/`payouts`
+arrays the rest of the dashboard already loads — no new backend endpoints
+were needed. If the CDN is unreachable the dashboard degrades gracefully
+(charts simply don't render; every other panel still works).
+
+### Marketing site
+
+Every marketing/legal page under `public/` and `public/folder/` carries a
+floating "Try Live Demo" button (bottom-right) that links straight to
+`demo.html`, so a visitor can try a real checkout without signing up. Every
+"Documentation" link across the site points at `folder/viewdocs.html`,
+which in turn links out to the live interactive API explorer
+(`/api/docs`, generated from `docs/openapi.yaml`).
 
 ## Getting Started
 
