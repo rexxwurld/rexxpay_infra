@@ -42,6 +42,11 @@ function esc(str) {
 function showTab(name) {
   document.querySelectorAll('.side-link').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${name}`));
+  // Chart.js can't size a canvas that was hidden (display:none) at creation time,
+  // so re-render whenever a chart-bearing tab becomes visible.
+  if (name === 'overview' || name === 'analytics') {
+    requestAnimationFrame(() => renderCharts());
+  }
 }
 document.querySelectorAll('.side-link').forEach(btn => {
   btn.addEventListener('click', () => showTab(btn.dataset.tab));
@@ -488,6 +493,223 @@ async function refreshAll() {
     loadSubscriptions(),
     loadInvoices(),
   ]);
+  renderCharts();
+}
+
+/* ---------- Charts (Overview + Analytics tab) ---------- */
+let _chartOvRevenue = null;
+let _chartAnBar = null;
+let _chartAnCandle = null;
+
+function dayKey(d) {
+  const dt = new Date(d);
+  return dt.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function lastNDays(n) {
+  const days = [];
+  const now = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    days.push(dayKey(d));
+  }
+  return days;
+}
+
+const SETTLED_STATUSES = ['success', 'partial', 'over'];
+
+function buildDailySeries(days) {
+  // Returns { received: {day: minorTotal}, paid: {day: minorTotal}, ohlc: {day: {o,h,l,c}} }
+  const received = {};
+  const paid = {};
+  const ohlc = {};
+  days.forEach(d => { received[d] = 0; paid[d] = 0; });
+
+  transactions.forEach(t => {
+    if (!SETTLED_STATUSES.includes(t.status)) return;
+    const key = dayKey(t.createdAt);
+    const amt = (t.amountReceived || 0) / 100;
+    if (key in received) received[key] += amt;
+
+    if (!ohlc[key]) ohlc[key] = { o: amt, h: amt, l: amt, c: amt };
+    else {
+      const row = ohlc[key];
+      row.h = Math.max(row.h, amt);
+      row.l = Math.min(row.l, amt);
+      row.c = amt; // transactions arrive sorted newest-first, so last write = earliest amount for the day; fine as an approximation of "close"
+    }
+  });
+
+  payouts.forEach(p => {
+    if (p.status !== 'successful') return;
+    const key = dayKey(p.createdAt);
+    if (key in paid) paid[key] += (p.amount || 0) / 100;
+  });
+
+  return { received, paid, ohlc };
+}
+
+function renderCharts() {
+  if (typeof Chart === 'undefined') return; // CDN blocked / offline — charts simply don't render
+
+  const days14 = lastNDays(14);
+  const days30 = lastNDays(30);
+  const series14 = buildDailySeries(days14);
+  const series30 = buildDailySeries(days30);
+
+  const shortLabel = (d) => new Date(d).toLocaleDateString('en-NG', { day: '2-digit', month: 'short' });
+
+  // ---- Overview: 14-day revenue bar chart ----
+  const ovCanvas = document.getElementById('ovRevenueChart');
+  if (ovCanvas) {
+    if (_chartOvRevenue) _chartOvRevenue.destroy();
+    _chartOvRevenue = new Chart(ovCanvas, {
+      type: 'bar',
+      data: {
+        labels: days14.map(shortLabel),
+        datasets: [{
+          label: 'Received',
+          data: days14.map(d => series14.received[d]),
+          backgroundColor: '#0ea5e9',
+          borderRadius: 4,
+          maxBarThickness: 26,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, ticks: { callback: (v) => '₦' + v.toLocaleString() } },
+        },
+      },
+    });
+  }
+
+  // ---- Analytics: 30-day bar (received vs paid out) ----
+  const anBarCanvas = document.getElementById('anBarChart');
+  if (anBarCanvas) {
+    if (_chartAnBar) _chartAnBar.destroy();
+    _chartAnBar = new Chart(anBarCanvas, {
+      type: 'bar',
+      data: {
+        labels: days30.map(shortLabel),
+        datasets: [
+          {
+            label: 'Received',
+            data: days30.map(d => series30.received[d]),
+            backgroundColor: '#0ea5e9',
+            borderRadius: 3,
+            maxBarThickness: 14,
+          },
+          {
+            label: 'Paid out',
+            data: days30.map(d => series30.paid[d]),
+            backgroundColor: '#7c3aed',
+            borderRadius: 3,
+            maxBarThickness: 14,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
+          y: { beginAtZero: true, ticks: { callback: (v) => '₦' + v.toLocaleString() } },
+        },
+      },
+    });
+  }
+
+  // ---- Analytics: candlestick (OHLC per day) ----
+  const anCandleCanvas = document.getElementById('anCandleChart');
+  if (anCandleCanvas) {
+    const candleData = days30
+      .filter(d => series30.ohlc[d])
+      .map(d => ({
+        x: new Date(d).getTime(),
+        o: series30.ohlc[d].o,
+        h: series30.ohlc[d].h,
+        l: series30.ohlc[d].l,
+        c: series30.ohlc[d].c,
+      }));
+
+    if (_chartAnCandle) _chartAnCandle.destroy();
+
+    try {
+      _chartAnCandle = new Chart(anCandleCanvas, {
+        type: 'candlestick',
+        data: { datasets: [{ label: 'Transaction range (₦)', data: candleData }] },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: { x: { type: 'time', time: { unit: 'day' } } },
+        },
+      });
+    } catch (e) {
+      // financial plugin failed to load (offline/CDN blocked) — fall back to a line of daily closes
+      _chartAnCandle = new Chart(anCandleCanvas, {
+        type: 'line',
+        data: {
+          labels: candleData.map(p => new Date(p.x).toLocaleDateString('en-NG', { day: '2-digit', month: 'short' })),
+          datasets: [{
+            label: 'Daily close (₦)',
+            data: candleData.map(p => p.c),
+            borderColor: '#0ea5e9',
+            backgroundColor: 'rgba(14,165,233,0.12)',
+            fill: true,
+            tension: 0.25,
+          }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+      });
+    }
+  }
+
+  renderInsights();
+}
+
+function renderInsights() {
+  const settled = transactions.filter(t => SETTLED_STATUSES.includes(t.status));
+  const avg = settled.length
+    ? settled.reduce((s, t) => s + (t.amountReceived || 0), 0) / settled.length
+    : 0;
+  const successRate = transactions.length
+    ? Math.round((settled.length / transactions.length) * 100)
+    : 0;
+
+  const days30set = new Set(lastNDays(30));
+  const dayCounts = {};
+  transactions.forEach(t => {
+    const key = dayKey(t.createdAt);
+    if (days30set.has(key)) dayCounts[key] = (dayCounts[key] || 0) + 1;
+  });
+  let busiestDay = '—';
+  let busiestCount = 0;
+  Object.entries(dayCounts).forEach(([d, c]) => {
+    if (c > busiestCount) { busiestCount = c; busiestDay = d; }
+  });
+
+  const refundRate = settled.length
+    ? Math.round((refunds.length / settled.length) * 100)
+    : 0;
+
+  const openDisputes = disputes.filter(d => ['open', 'under_review'].includes(d.status)).length;
+  const activeSubs = subscriptions.filter(s => s.status === 'active').length;
+
+  const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setText('anAvgVal', money(avg));
+  setText('anSuccessRate', transactions.length ? `${successRate}%` : '—');
+  setText('anBusiestDay', busiestCount ? `${new Date(busiestDay).toLocaleDateString('en-NG', { day: '2-digit', month: 'short' })} (${busiestCount})` : '—');
+  setText('anRefundRate', settled.length ? `${refundRate}%` : '—');
+  setText('anOpenDisputes', String(openDisputes));
+  setText('anActiveSubs', String(activeSubs));
+
+  const emptyNote = document.getElementById('anEmptyNote');
+  if (emptyNote) emptyNote.style.display = transactions.length ? 'none' : 'flex';
 }
 
 /* ---------- Event wiring: existing panels ---------- */
