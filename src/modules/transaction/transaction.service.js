@@ -30,19 +30,24 @@ async function recordIncomingPayment({
     return { transaction: existing, duplicate: true };
   }
 
+  // Loaded up front now (previously only fetched later, just for fees) -
+  // limit checks below are plan-aware and need it too.
+  const merchant = await Merchant.findById(merchantId);
+  const merchantLimits = limits.getLimitsForMerchant(merchant);
+
   let flagReason = null;
 
-  if (amountReceived > limits.MAX_SINGLE_PAYMENT_MINOR) {
+  if (amountReceived > merchantLimits.MAX_SINGLE_PAYMENT_MINOR) {
     flagReason = 'exceeds_max_single_payment';
   }
 
   if (!flagReason) {
-    const windowStart = new Date(Date.now() - limits.VELOCITY_WINDOW_MINUTES * 60 * 1000);
+    const windowStart = new Date(Date.now() - merchantLimits.VELOCITY_WINDOW_MINUTES * 60 * 1000);
     const recentCount = await Transaction.countDocuments({
       virtualAccount: virtualAccountId,
       createdAt: { $gte: windowStart },
     });
-    if (recentCount >= limits.VELOCITY_MAX_COUNT) {
+    if (recentCount >= merchantLimits.VELOCITY_MAX_COUNT) {
       flagReason = 'velocity_limit_exceeded';
     }
   }
@@ -54,7 +59,7 @@ async function recordIncomingPayment({
       { $group: { _id: null, total: { $sum: '$amountReceived' } } },
     ]);
     const dailyTotal = (dailyAgg?.total || 0) + amountReceived;
-    if (dailyTotal > limits.MAX_DAILY_INBOUND_MINOR) {
+    if (dailyTotal > merchantLimits.MAX_DAILY_INBOUND_MINOR) {
       flagReason = 'exceeds_daily_inbound_limit';
     }
   }
@@ -98,7 +103,6 @@ async function recordIncomingPayment({
   let netAmount = merchantAmount;
 
   if (status !== 'flagged' && status !== 'failed' && merchantAmount > 0) {
-    const merchant = await Merchant.findById(merchantId);
     ({ feeAmount: platformFee, netAmount } = computeFee(merchantAmount, merchant));
   }
 
