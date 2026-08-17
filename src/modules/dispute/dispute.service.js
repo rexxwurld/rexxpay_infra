@@ -32,6 +32,12 @@ async function openDispute({ merchantId, transactionId, amount, reason, reasonDe
 
     await debitWallet(merchantId, disputeAmount, session, transaction.currency, mode);
 
+    // openLock defaults to true (see dispute.model.js) - the partial
+    // unique index on { transaction, openLock } is what actually
+    // enforces "at most one open dispute per transaction". If a second
+    // dispute is already open on this transaction, this insert fails
+    // with a duplicate-key error (code 11000), caught below, instead of
+    // silently creating a second freeze on the same money.
     const [created] = await Dispute.create(
       [
         {
@@ -66,6 +72,10 @@ async function openDispute({ merchantId, transactionId, amount, reason, reasonDe
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
+
+    if (err.code === 11000) {
+      throw new Error('dispute_already_open_for_transaction');
+    }
     throw err;
   }
 
@@ -146,6 +156,11 @@ async function resolveDispute({ disputeId, outcome, resolution }) {
     dispute.status = outcome;
     dispute.resolution = resolution || null;
     dispute.resolvedAt = new Date();
+    // Release the partial-unique-index lock now that this dispute is
+    // resolved, so the transaction is free to be disputed again in the
+    // future (e.g. a different, later dispute) without being blocked by
+    // this now-closed one.
+    dispute.openLock = undefined;
     await dispute.save({ session });
 
     await session.commitTransaction();
