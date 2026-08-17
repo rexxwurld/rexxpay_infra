@@ -30,6 +30,7 @@ const subscriptionRoutes = require('./modules/subscription/subscription.routes')
 const disputeRoutes = require('./modules/dispute/dispute.routes');
 const settlementRoutes = require('./modules/settlement/settlement.routes');
 const demoRoutes = require('./modules/demo/demo.routes');
+const refundWebhookRoutes = require('./modules/refund/refund.webhook.routes');
 
 const {
   notFound,
@@ -141,6 +142,7 @@ apiV1.use('/payments', paymentRoutes);
 apiV1.use('/subscriptions', subscriptionRoutes);
 apiV1.use('/disputes', disputeRoutes);
 apiV1.use('/demo', demoLimiter, demoRoutes);
+apiV1.use('/webhooks/refunds', webhookLimiter, refundWebhookRoutes);
 
 
 
